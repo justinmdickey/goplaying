@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -50,7 +51,7 @@ func getSongInfo() (string, error) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get player metadata for " + player)
 	}
 
 	output := strings.TrimSpace(out.String())
@@ -75,7 +76,7 @@ func getSongInfo() (string, error) {
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get track length")
 	}
 
 	// Song length is in microseconds, so convert it to seconds
@@ -90,7 +91,7 @@ func getSongInfo() (string, error) {
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get track position")
 	}
 
 	var currentPosition float64
