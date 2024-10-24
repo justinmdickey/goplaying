@@ -121,9 +121,17 @@ func getSongInfo(player string) (string, error) {
 	progressBarTotalWidth := 25
 
 	filledLength := int(progressPercentage / 100 * float64(progressBarTotalWidth))
+	// Fixes playerctl issue, see https://github.com/justinmdickey/goplaying/issues/8
+	if filledLength < 0 {
+		filledLength = 0
+	} else if filledLength > 25 {
+		filledLength = 25
+	}
+
+	unFilledLength := progressBarTotalWidth-filledLength
 
 	// Build the progress bar (e.g., [█████-----]) with the current progress
-	progressBar := "[" + strings.Repeat("[green]█", filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
+	progressBar := "[" + strings.Repeat("[green]█", filledLength) + strings.Repeat("[white]-", unFilledLength) + "]"
 
 	// Padding for display
 	padding := "    "
