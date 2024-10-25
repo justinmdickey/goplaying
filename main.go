@@ -33,7 +33,7 @@ func truncateText(text string, maxLength int) string {
 	return text
 }
 
-func getSongInfo(player string) (string, error) {
+func getSongInfo() (string, error) {
 	// Limits for title, artist, and album
 	const (
 		maxTitleLength  = 30
@@ -44,11 +44,7 @@ func getSongInfo(player string) (string, error) {
 	var cmd *exec.Cmd
 
 	// Fetch song metadata (Title, Artist, Album)
-	if player != "" {
-		cmd = exec.Command("playerctl", "-p", player, "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-	} else {
-		cmd = exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-	}
+	cmd = exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -138,7 +134,6 @@ func controlPlayer(command string) error {
 }
 
 func main() {
-	player := "spotify" // e.g., "spotify"
 
 	// Create a TextView widget
 	songText := tview.NewTextView().
@@ -184,7 +179,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				songInfo, err := getSongInfo(player)
+				songInfo, err := getSongInfo()
 				if err != nil {
 					songInfo = fmt.Sprintf("Error: %v", err)
 				}
