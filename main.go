@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
-	"errors"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -116,14 +116,28 @@ func getSongInfo() (string, error) {
 	padding := "    "
 
 	// Display song details with the progress bar and time
-	songInfo := fmt.Sprintf(
-		"\n%s[green]Title: [-] %s\n%s[green]Artist:[-] %s\n%s[green]Album: [-] %s\n%s[green]Status:[-] %s\n\n%s%s %s/%s\n",
-		padding, title,
-		padding, artist,
-		padding, album,
-		padding, status,
-		padding, progressBar, currentPositionStr, songLengthStr, // Progress bar with time
-	)
+	songInfo := ""
+
+	if title != "" {
+		songInfo += fmt.Sprintf("\n%s[green]Title: [-] %s\n", padding, title)
+	}
+
+	if artist != "" {
+		songInfo += fmt.Sprintf("%s[green]Artist:[-] %s\n", padding, artist)
+	}
+
+	if album != "" {
+		songInfo += fmt.Sprintf("%s[green]Album: [-] %s\n", padding, album)
+	}
+
+	if status != "" {
+		songInfo += fmt.Sprintf("%s[green]Status:[-] %s\n", padding, status)
+	}
+
+	// Progress bar with time (conditionally include progress bar if times are not empty)
+	if progressBar != "" || currentPositionStr != "" || songLengthStr != "" {
+		songInfo += fmt.Sprintf("\n%s%s %s/%s\n", padding, progressBar, currentPositionStr, songLengthStr)
+	}
 
 	return songInfo, nil
 }
