@@ -64,18 +64,10 @@ func getSongInfo() (string, error) {
 		return "Unexpected output format.", nil
 	}
 
-	emptyField := "—" // em dash
-
 	// Truncate the title, artist, and album to the specified max length
 	title := truncateText(strings.TrimSpace(info[0]), maxTitleLength)
 	artist := truncateText(strings.TrimSpace(info[1]), maxArtistLength)
-	if artist == "" {
-		artist = emptyField
-	}
 	album := truncateText(strings.TrimSpace(info[2]), maxAlbumLength)
-	if album == "" {
-		album = emptyField
-	}
 	status := strings.TrimSpace(info[3])
 
 	// Get song length
