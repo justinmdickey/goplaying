@@ -155,10 +155,7 @@ func main() {
 
 	outerBox := tview.NewBox().
 		SetBorder(false).
-		SetTitle("  Now Playing ").
-		SetBorderColor(tcell.ColorGreen).
-		SetTitleColor(tcell.ColorGreen).
-		SetTitleAlign(tview.AlignCenter)
+		SetBorderColor(tcell.ColorBlue)
 
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -168,7 +165,7 @@ func main() {
 			AddItem(songText, 52, 1, true).
 			AddItem(tview.NewBox().SetBorder(false), 0, 1, false),
 			0, 4, false).
-		AddItem(controlText, 5, 1, false)
+		AddItem(controlText, 0, 1, false)
 
 	app := tview.NewApplication()
 
