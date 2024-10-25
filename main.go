@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 	"errors"
-	"flag"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -52,7 +51,7 @@ func getSongInfo() (string, error) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		return "", errors.New("Can't get player metadata for " + player)
+		return "", errors.New("Can't get player metadata for player")
 	}
 
 	output := strings.TrimSpace(out.String())
