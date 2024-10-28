@@ -44,6 +44,15 @@ go build
 
 ## Usage
 
+Custom colors can be set using flags:
+`--color` or `-c` - Set the color of the text. This can be a color name or hex code.
+
+```bash
+./goplaying --color=red
+./goplaying -c red
+./goplaying -c=#ff0000
+```
+
 The controls are basic vim keybinds:
 - `p` - Play/Pause
 - `n` - Next
