@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -12,6 +13,14 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+var colorFlag string // Declare the flag variable as a global variable
+
+func init() {
+	// Define and initialize the flag
+	flag.StringVar(&colorFlag, "color", "green", "set the desired color")
+  flag.StringVar(&colorFlag, "c", "green", "set the desired color")
+}
 
 // Helper function to convert seconds to "mm:ss" format
 func formatTime(seconds int64) string {
@@ -35,6 +44,9 @@ func truncateText(text string, maxLength int) string {
 }
 
 func getSongInfo() (string, error) {
+
+	flag.Parse()
+
 	// Limits for title, artist, and album
 	const (
 		maxTitleLength  = 30
@@ -109,8 +121,10 @@ func getSongInfo() (string, error) {
 
 	filledLength := int(progressPercentage / 100 * float64(progressBarTotalWidth))
 
+	progressBarIcon := fmt.Sprintf("[%s]█", colorFlag)
+
 	// Build the progress bar (e.g., [█████-----]) with the current progress
-	progressBar := "[" + strings.Repeat("[green]█", filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
+	progressBar := "[" + strings.Repeat(progressBarIcon, filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
 
 	// Padding for display
 	padding := "    "
@@ -119,19 +133,19 @@ func getSongInfo() (string, error) {
 	songInfo := ""
 
 	if title != "" {
-		songInfo += fmt.Sprintf("\n%s[green]Title: [-] %s\n", padding, title)
+		songInfo += fmt.Sprintf("\n%s[%s]Title: [-] %s\n", padding, colorFlag, title)
 	}
 
 	if artist != "" {
-		songInfo += fmt.Sprintf("%s[green]Artist:[-] %s\n", padding, artist)
+		songInfo += fmt.Sprintf("%s[%s]Artist:[-] %s\n", padding, colorFlag, artist)
 	}
 
 	if album != "" {
-		songInfo += fmt.Sprintf("%s[green]Album: [-] %s\n", padding, album)
+		songInfo += fmt.Sprintf("%s[%s]Album: [-] %s\n", padding, colorFlag, album)
 	}
 
 	if status != "" {
-		songInfo += fmt.Sprintf("%s[green]Status:[-] %s\n", padding, status)
+		songInfo += fmt.Sprintf("%s[%s]Status:[-] %s\n", padding, colorFlag, status)
 	}
 
 	// Progress bar with time (conditionally include progress bar if times are not empty)
@@ -150,6 +164,11 @@ func controlPlayer(command string) error {
 
 func main() {
 
+  flag.Parse()
+
+	// Set the color for the border
+	borderColor := tcell.GetColor(colorFlag)
+
 	// Create a TextView widget
 	songText := tview.NewTextView().
 		SetDynamicColors(true).
@@ -158,18 +177,18 @@ func main() {
 	songText.SetBorder(true).
 		SetTitle("  Now Playing ").
 		SetBorderPadding(1, 1, 1, 1).
-		SetBorderColor(tcell.ColorGreen).
-		SetTitleColor(tcell.ColorGreen).
+		SetBorderColor(borderColor).
+		SetTitleColor(borderColor).
 		SetTitleAlign(tview.AlignCenter)
 
 	controlText := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("\nPlay/Pause: [green]p[-]  Next: [green]n[-]  Previous: [green]b[-]  Quit: [green]q[-]").
+		SetText(fmt.Sprintf("\nPlay/Pause: [%s]p[-]  Next: [%s]n[-]  Previous: [%s]b[-]  Quit: [%s]q[-]", borderColor, borderColor, borderColor, borderColor)).
 		SetTextAlign(tview.AlignCenter)
 
 	outerBox := tview.NewBox().
 		SetBorder(false).
-		SetBorderColor(tcell.ColorBlue)
+		SetBorderColor(borderColor)
 
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
