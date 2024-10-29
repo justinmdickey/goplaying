@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"flag"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -11,6 +13,14 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+var colorFlag string // Declare the flag variable as a global variable
+
+func init() {
+	// Define and initialize the flag
+	flag.StringVar(&colorFlag, "color", "green", "set the desired color")
+  flag.StringVar(&colorFlag, "c", "green", "set the desired color")
+}
 
 // Helper function to convert seconds to "mm:ss" format
 func formatTime(seconds int64) string {
@@ -33,7 +43,10 @@ func truncateText(text string, maxLength int) string {
 	return text
 }
 
-func getSongInfo(player string) (string, error) {
+func getSongInfo() (string, error) {
+
+	flag.Parse()
+
 	// Limits for title, artist, and album
 	const (
 		maxTitleLength  = 30
@@ -44,17 +57,13 @@ func getSongInfo(player string) (string, error) {
 	var cmd *exec.Cmd
 
 	// Fetch song metadata (Title, Artist, Album)
-	if player != "" {
-		cmd = exec.Command("playerctl", "-p", player, "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-	} else {
-		cmd = exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-	}
+	cmd = exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get player metadata for player")
 	}
 
 	output := strings.TrimSpace(out.String())
@@ -79,7 +88,7 @@ func getSongInfo(player string) (string, error) {
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get track length")
 	}
 
 	// Song length is in microseconds, so convert it to seconds
@@ -94,7 +103,7 @@ func getSongInfo(player string) (string, error) {
 	cmd.Stdout = &out
 	err = cmd.Run()
 	if err != nil {
-		return "", err
+		return "", errors.New("Can't get track position")
 	}
 
 	var currentPosition float64
@@ -112,21 +121,37 @@ func getSongInfo(player string) (string, error) {
 
 	filledLength := int(progressPercentage / 100 * float64(progressBarTotalWidth))
 
+	progressBarIcon := fmt.Sprintf("[%s]█", colorFlag)
+
 	// Build the progress bar (e.g., [█████-----]) with the current progress
-	progressBar := "[" + strings.Repeat("[green]█", filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
+	progressBar := "[" + strings.Repeat(progressBarIcon, filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
 
 	// Padding for display
 	padding := "    "
 
 	// Display song details with the progress bar and time
-	songInfo := fmt.Sprintf(
-		"\n%s[green]Title: [-] %s\n%s[green]Artist:[-] %s\n%s[green]Album: [-] %s\n%s[green]Status:[-] %s\n\n%s%s %s/%s\n",
-		padding, title,
-		padding, artist,
-		padding, album,
-		padding, status,
-		padding, progressBar, currentPositionStr, songLengthStr, // Progress bar with time
-	)
+	songInfo := ""
+
+	if title != "" {
+		songInfo += fmt.Sprintf("\n%s[%s]Title: [-] %s\n", padding, colorFlag, title)
+	}
+
+	if artist != "" {
+		songInfo += fmt.Sprintf("%s[%s]Artist:[-] %s\n", padding, colorFlag, artist)
+	}
+
+	if album != "" {
+		songInfo += fmt.Sprintf("%s[%s]Album: [-] %s\n", padding, colorFlag, album)
+	}
+
+	if status != "" {
+		songInfo += fmt.Sprintf("%s[%s]Status:[-] %s\n", padding, colorFlag, status)
+	}
+
+	// Progress bar with time (conditionally include progress bar if times are not empty)
+	if progressBar != "" || currentPositionStr != "" || songLengthStr != "" {
+		songInfo += fmt.Sprintf("\n%s%s %s/%s\n", padding, progressBar, currentPositionStr, songLengthStr)
+	}
 
 	return songInfo, nil
 }
@@ -138,7 +163,11 @@ func controlPlayer(command string) error {
 }
 
 func main() {
-	player := "spotify" // e.g., "spotify"
+
+  flag.Parse()
+
+	// Set the color for the border
+	borderColor := tcell.GetColor(colorFlag)
 
 	// Create a TextView widget
 	songText := tview.NewTextView().
@@ -148,21 +177,18 @@ func main() {
 	songText.SetBorder(true).
 		SetTitle("  Now Playing ").
 		SetBorderPadding(1, 1, 1, 1).
-		SetBorderColor(tcell.ColorGreen).
-		SetTitleColor(tcell.ColorGreen).
+		SetBorderColor(borderColor).
+		SetTitleColor(borderColor).
 		SetTitleAlign(tview.AlignCenter)
 
 	controlText := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("\nPlay/Pause: [green]p[-]  Next: [green]n[-]  Previous: [green]b[-]  Quit: [green]q[-]").
+		SetText(fmt.Sprintf("\nPlay/Pause: [%s]p[-]  Next: [%s]n[-]  Previous: [%s]b[-]  Quit: [%s]q[-]", borderColor, borderColor, borderColor, borderColor)).
 		SetTextAlign(tview.AlignCenter)
 
 	outerBox := tview.NewBox().
 		SetBorder(false).
-		SetTitle("  Now Playing ").
-		SetBorderColor(tcell.ColorGreen).
-		SetTitleColor(tcell.ColorGreen).
-		SetTitleAlign(tview.AlignCenter)
+		SetBorderColor(borderColor)
 
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -172,7 +198,7 @@ func main() {
 			AddItem(songText, 52, 1, true).
 			AddItem(tview.NewBox().SetBorder(false), 0, 1, false),
 			0, 4, false).
-		AddItem(controlText, 5, 1, false)
+		AddItem(controlText, 0, 1, false)
 
 	app := tview.NewApplication()
 
@@ -184,7 +210,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				songInfo, err := getSongInfo(player)
+				songInfo, err := getSongInfo()
 				if err != nil {
 					songInfo = fmt.Sprintf("Error: %v", err)
 				}
