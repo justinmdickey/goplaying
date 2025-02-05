@@ -201,13 +201,13 @@ func (m model) View() string {
 		Width(50).
 		Render(titleStyle.Render("                Now Playing") + "\n\n" + content.String())
 
-	helpText := lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		highlight.Render("Play/Pause: [p]"),
-		highlight.Render("  Next: [n]"),
-		highlight.Render("  Previous: [b]"),
-		highlight.Render("  Quit: [q]"),
-	)
+  helpText := lipgloss.JoinHorizontal(
+    lipgloss.Center,
+    "Play/Pause: " + highlight.Render("p"),
+    "  Next: " + highlight.Render("n"),
+    "  Previous: " + highlight.Render("b"),
+    "  Quit: " + highlight.Render("q"),
+)
 
 	fullUI := lipgloss.JoinVertical(lipgloss.Center, contentStr, "\n"+helpText)
 
