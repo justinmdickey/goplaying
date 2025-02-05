@@ -48,8 +48,8 @@ Custom colors can be set using flags:
 `--color` or `-c` - Set the color of the text. This can be a color name or hex code.
 
 ```bash
-./goplaying --color=red
-./goplaying -c red
+./goplaying --color "#ff0000"
+./goplaying -c 1
 ./goplaying -c=#ff0000
 ```
 
