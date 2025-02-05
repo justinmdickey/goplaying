@@ -5,249 +5,232 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-var colorFlag string // Declare the flag variable as a global variable
+var colorFlag string
 
 func init() {
-	// Define and initialize the flag
-	flag.StringVar(&colorFlag, "color", "green", "set the desired color")
-  flag.StringVar(&colorFlag, "c", "green", "set the desired color")
+	flag.StringVar(&colorFlag, "color", "2", "Set the desired color (name or hex)")
+	flag.StringVar(&colorFlag, "c", "2", "Set the desired color (shorthand)")
 }
 
-// Helper function to convert seconds to "mm:ss" format
-func formatTime(seconds int64) string {
-	minutes := seconds / 60
-	seconds = seconds % 60
-	return fmt.Sprintf("%02d:%02d", minutes, seconds)
+type SongData struct {
+	Status      string
+	Title       string
+	Artist      string
+	Album       string
+	CurrentTime string
+	TotalTime   string
+	Progress    float64
 }
 
-// Strip tview color tags (e.g., [green]) for measuring content width correctly
-func stripColorTags(input string) string {
-	re := regexp.MustCompile(`\[[^\]]+\]`)
-	return re.ReplaceAllString(input, "")
+type model struct {
+	songData  SongData
+	color     string
+	width     int
+	height    int
+	lastError error
 }
 
-// Limit the length of a string and add "..." if too long
-func truncateText(text string, maxLength int) string {
-	if len(text) > maxLength {
-		return text[:maxLength-3] + "..." // Leave room for ellipsis.
-	}
-	return text
-}
+type tickMsg struct{}
 
-func getSongInfo() (string, error) {
+func getSongInfo() (SongData, error) {
+	var data SongData
 
-	flag.Parse()
-
-	// Limits for title, artist, and album
-	const (
-		maxTitleLength  = 30
-		maxArtistLength = 30
-		maxAlbumLength  = 30
-	)
-
-	var cmd *exec.Cmd
-
-	// Fetch song metadata (Title, Artist, Album)
-	cmd = exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-
+	cmd := exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return "", errors.New("Can't get player metadata for player")
+	if err := cmd.Run(); err != nil {
+		return data, errors.New("can't get metadata")
 	}
 
 	output := strings.TrimSpace(out.String())
 	if output == "" {
-		return "No song is currently playing.", nil
+		return data, errors.New("no song playing")
 	}
 
-	info := strings.Split(output, "|")
-	if len(info) != 4 {
-		return "Unexpected output format.", nil
+	parts := strings.Split(output, "|")
+	if len(parts) != 4 {
+		return data, errors.New("unexpected metadata format")
 	}
 
-	// Truncate the title, artist, and album to the specified max length
-	title := truncateText(strings.TrimSpace(info[0]), maxTitleLength)
-	artist := truncateText(strings.TrimSpace(info[1]), maxArtistLength)
-	album := truncateText(strings.TrimSpace(info[2]), maxAlbumLength)
-	status := strings.TrimSpace(info[3])
+	data.Title = truncateText(strings.TrimSpace(parts[0]), 30)
+	data.Artist = truncateText(strings.TrimSpace(parts[1]), 30)
+	data.Album = truncateText(strings.TrimSpace(parts[2]), 30)
+	data.Status = strings.TrimSpace(parts[3])
 
-	// Get song length
 	cmd = exec.Command("playerctl", "metadata", "mpris:length")
 	out.Reset()
 	cmd.Stdout = &out
-	err = cmd.Run()
-	if err != nil {
-		return "", errors.New("Can't get track length")
+	if err := cmd.Run(); err != nil {
+		return data, errors.New("can't get duration")
 	}
 
-	// Song length is in microseconds, so convert it to seconds
-	songLengthMicroseconds := strings.TrimSpace(out.String())
-	var songLengthSeconds int64
-	fmt.Sscanf(songLengthMicroseconds, "%d", &songLengthSeconds)
-	songLengthSeconds = songLengthSeconds / 1e6 // Convert to seconds
+	var duration int64
+	fmt.Sscanf(strings.TrimSpace(out.String()), "%d", &duration)
+	duration = duration / 1e6
 
-	// Get current position
 	cmd = exec.Command("playerctl", "position")
 	out.Reset()
 	cmd.Stdout = &out
-	err = cmd.Run()
-	if err != nil {
-		return "", errors.New("Can't get track position")
+	if err := cmd.Run(); err != nil {
+		return data, errors.New("can't get position")
 	}
 
-	var currentPosition float64
-	fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &currentPosition)
+	var position float64
+	fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &position)
 
-	// Convert song length and position from seconds to mm:ss format
-	currentPositionStr := formatTime(int64(currentPosition))
-	songLengthStr := formatTime(songLengthSeconds)
+	data.CurrentTime = formatTime(int64(position))
+	data.TotalTime = formatTime(duration)
+	data.Progress = position / float64(duration)
 
-	// Calculate progress percentage
-	progressPercentage := currentPosition / float64(songLengthSeconds) * 100
-
-	// Set a fixed progress bar width (e.g., 50 characters)
-	progressBarTotalWidth := 25
-
-	filledLength := int(progressPercentage / 100 * float64(progressBarTotalWidth))
-
-	progressBarIcon := fmt.Sprintf("[%s]█", colorFlag)
-
-	// Build the progress bar (e.g., [█████-----]) with the current progress
-	progressBar := "[" + strings.Repeat(progressBarIcon, filledLength) + strings.Repeat("[white]-", progressBarTotalWidth-filledLength) + "]"
-
-	// Padding for display
-	padding := "    "
-
-	// Display song details with the progress bar and time
-	songInfo := ""
-
-	if title != "" {
-		songInfo += fmt.Sprintf("\n%s[%s]Title: [-] %s\n", padding, colorFlag, title)
-	}
-
-	if artist != "" {
-		songInfo += fmt.Sprintf("%s[%s]Artist:[-] %s\n", padding, colorFlag, artist)
-	}
-
-	if album != "" {
-		songInfo += fmt.Sprintf("%s[%s]Album: [-] %s\n", padding, colorFlag, album)
-	}
-
-	if status != "" {
-		songInfo += fmt.Sprintf("%s[%s]Status:[-] %s\n", padding, colorFlag, status)
-	}
-
-	// Progress bar with time (conditionally include progress bar if times are not empty)
-	if progressBar != "" || currentPositionStr != "" || songLengthStr != "" {
-		songInfo += fmt.Sprintf("\n%s%s %s/%s\n", padding, progressBar, currentPositionStr, songLengthStr)
-	}
-
-	return songInfo, nil
+	return data, nil
 }
 
-// Function to execute playerctl commands
+func formatTime(seconds int64) string {
+	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
+}
+
+func truncateText(text string, max int) string {
+	if len(text) > max {
+		return text[:max-3] + "..."
+	}
+	return text
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return tickMsg{}
+	})
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q":
+			return m, tea.Quit
+		case "p":
+			controlPlayer("play-pause")
+		case "n":
+			controlPlayer("next")
+		case "b":
+			controlPlayer("previous")
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	case tickMsg:
+		data, err := getSongInfo()
+		if err != nil {
+			m.lastError = err
+		} else {
+			m.songData = data
+			m.lastError = nil
+		}
+		return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+			return tickMsg{}
+		})
+	}
+	return m, nil
+}
+
+func (m model) View() string {
+	// Use lipgloss.Color to validate the color input
+	color := lipgloss.Color(m.color)
+	highlight := lipgloss.NewStyle().Foreground(color)
+	white := lipgloss.NewStyle().Foreground(lipgloss.Color("15")) // ANSI white
+
+	borderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(color).
+		Padding(1, 2)
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(color).
+		Bold(true)
+
+	labelStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+
+	var content strings.Builder
+
+	if m.lastError != nil {
+		content.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
+	} else {
+		addLine := func(label, value string) {
+			if value != "" {
+				content.WriteString(
+					fmt.Sprintf("%s %s\n",
+						labelStyle.Render(label),
+						value,
+					),
+				)
+			}
+		}
+
+		addLine("Title: ", m.songData.Title)
+		addLine("Artist:", m.songData.Artist)
+		addLine("Album: ", m.songData.Album)
+		addLine("Status:", m.songData.Status)
+
+		if m.songData.Progress > 0 {
+			// Progress bar
+			barWidth := 32
+			filled := int(float64(barWidth) * m.songData.Progress)
+			progressBar := highlight.Render(strings.Repeat("█", filled)) +
+				white.Render(strings.Repeat("─", barWidth-filled))
+
+			content.WriteString(fmt.Sprintf(
+				"\n%s %s/%s",
+				progressBar,
+				highlight.Render(m.songData.CurrentTime),
+				highlight.Render(m.songData.TotalTime),
+			))
+		}
+	}
+
+	contentStr := borderStyle.
+		Width(50).
+		Render(titleStyle.Render("                Now Playing") + "\n\n" + content.String())
+
+  helpText := lipgloss.JoinHorizontal(
+    lipgloss.Center,
+    "Play/Pause: " + highlight.Render("p"),
+    "  Next: " + highlight.Render("n"),
+    "  Previous: " + highlight.Render("b"),
+    "  Quit: " + highlight.Render("q"),
+)
+
+	fullUI := lipgloss.JoinVertical(lipgloss.Center, contentStr, "\n"+helpText)
+
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		fullUI,
+	)
+}
+
 func controlPlayer(command string) error {
-	cmd := exec.Command("playerctl", command)
-	return cmd.Run()
+	return exec.Command("playerctl", command).Run()
 }
 
 func main() {
+	flag.Parse()
 
-  flag.Parse()
+	initialModel := model{
+		color: colorFlag,
+	}
 
-	// Set the color for the border
-	borderColor := tcell.GetColor(colorFlag)
-
-	// Create a TextView widget
-	songText := tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignLeft)
-
-	songText.SetBorder(true).
-		SetTitle("  Now Playing ").
-		SetBorderPadding(1, 1, 1, 1).
-		SetBorderColor(borderColor).
-		SetTitleColor(borderColor).
-		SetTitleAlign(tview.AlignCenter)
-
-	controlText := tview.NewTextView().
-		SetDynamicColors(true).
-		SetText(fmt.Sprintf("\nPlay/Pause: [%s]p[-]  Next: [%s]n[-]  Previous: [%s]b[-]  Quit: [%s]q[-]", borderColor, borderColor, borderColor, borderColor)).
-		SetTextAlign(tview.AlignCenter)
-
-	outerBox := tview.NewBox().
-		SetBorder(false).
-		SetBorderColor(borderColor)
-
-	flex := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(outerBox, 0, 1, false).
-		AddItem(tview.NewFlex().
-			AddItem(tview.NewBox().SetBorder(false), 0, 1, false).
-			AddItem(songText, 52, 1, true).
-			AddItem(tview.NewBox().SetBorder(false), 0, 1, false),
-			0, 4, false).
-		AddItem(controlText, 0, 1, false)
-
-	app := tview.NewApplication()
-
-	// Goroutine to update song information periodically
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				songInfo, err := getSongInfo()
-				if err != nil {
-					songInfo = fmt.Sprintf("Error: %v", err)
-				}
-
-				app.QueueUpdateDraw(func() {
-					songText.SetText(songInfo)
-				})
-			}
-		}
-	}()
-
-	// Set up keybinding handlers
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'q': // Quit the application
-			app.Stop()
-		case 'p': // Play/pause
-			err := controlPlayer("play-pause")
-			if err != nil {
-				fmt.Println("Error executing play-pause:", err)
-			}
-		case 'n': // Next track
-			err := controlPlayer("next")
-			if err != nil {
-				fmt.Println("Error executing next:", err)
-			}
-		case 'b': // Previous track
-			err := controlPlayer("previous")
-			if err != nil {
-				fmt.Println("Error executing previous:", err)
-			}
-		}
-		return event
-	})
-
-	// Run the application
-	if err := app.SetRoot(flex, true).Run(); err != nil {
-		panic(err)
+	if _, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run(); err != nil {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
 	}
 }
