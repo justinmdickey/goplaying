@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -32,64 +29,48 @@ type SongData struct {
 }
 
 type model struct {
-	songData  SongData
-	color     string
-	width     int
-	height    int
-	lastError error
+	songData       SongData
+	color          string
+	width          int
+	height         int
+	lastError      error
+	mediaController MediaController
 }
 
 type tickMsg struct{}
 
-func getSongInfo() (SongData, error) {
+func getSongInfo(mc MediaController) (SongData, error) {
 	var data SongData
 
-	cmd := exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return data, errors.New("can't get metadata")
+	title, artist, album, status, err := mc.GetMetadata()
+	if err != nil {
+		return data, err
 	}
 
-	output := strings.TrimSpace(out.String())
-	if output == "" {
-		return data, errors.New("no song playing")
+	data.Title = truncateText(title, 30)
+	data.Artist = truncateText(artist, 30)
+	data.Album = truncateText(album, 30)
+	data.Status = status
+
+	duration, err := mc.GetDuration()
+	if err != nil {
+		return data, err
 	}
 
-	parts := strings.Split(output, "|")
-	if len(parts) != 4 {
-		return data, errors.New("unexpected metadata format")
+	position, err := mc.GetPosition()
+	if err != nil {
+		return data, err
 	}
-
-	data.Title = truncateText(strings.TrimSpace(parts[0]), 30)
-	data.Artist = truncateText(strings.TrimSpace(parts[1]), 30)
-	data.Album = truncateText(strings.TrimSpace(parts[2]), 30)
-	data.Status = strings.TrimSpace(parts[3])
-
-	cmd = exec.Command("playerctl", "metadata", "mpris:length")
-	out.Reset()
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return data, errors.New("can't get duration")
-	}
-
-	var duration int64
-	fmt.Sscanf(strings.TrimSpace(out.String()), "%d", &duration)
-	duration = duration / 1e6
-
-	cmd = exec.Command("playerctl", "position")
-	out.Reset()
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return data, errors.New("can't get position")
-	}
-
-	var position float64
-	fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &position)
 
 	data.CurrentTime = formatTime(int64(position))
 	data.TotalTime = formatTime(duration)
-	data.Progress = position / float64(duration)
+
+	// Guard against division by zero
+	if duration > 0 {
+		data.Progress = position / float64(duration)
+	} else {
+		data.Progress = 0.0
+	}
 
 	return data, nil
 }
@@ -118,17 +99,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		case "p":
-			controlPlayer("play-pause")
+			if err := m.mediaController.Control("play-pause"); err != nil {
+				m.lastError = err
+			}
 		case "n":
-			controlPlayer("next")
+			if err := m.mediaController.Control("next"); err != nil {
+				m.lastError = err
+			}
 		case "b":
-			controlPlayer("previous")
+			if err := m.mediaController.Control("previous"); err != nil {
+				m.lastError = err
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 	case tickMsg:
-		data, err := getSongInfo()
+		data, err := getSongInfo(m.mediaController)
 		if err != nil {
 			m.lastError = err
 		} else {
@@ -218,15 +205,12 @@ func (m model) View() string {
 	)
 }
 
-func controlPlayer(command string) error {
-	return exec.Command("playerctl", command).Run()
-}
-
 func main() {
 	flag.Parse()
 
 	initialModel := model{
-		color: colorFlag,
+		color:           colorFlag,
+		mediaController: NewMediaController(),
 	}
 
 	if _, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run(); err != nil {
