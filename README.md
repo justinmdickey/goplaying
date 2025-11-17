@@ -2,7 +2,7 @@
 
 ## Description
 
-This is a basic Now Playing TUI written in Go. I wanted a simple way to see what was playing on my Spotify account without having to open the app. This is a simple solution that uses playerctl to get the currently playing song and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+This is a basic Now Playing TUI written in Go. I wanted a simple way to see what was playing on my Spotify account without having to open the app. This cross-platform solution works on both Linux (using playerctl) and macOS (using AppleScript) to get the currently playing song and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
 
 ![GoPlaying](assets/GoPlaying.jpeg)
 
@@ -15,12 +15,21 @@ You can install GoPlaying from the AUR with the package `goplaying-git`.
 yay -S goplaying-git
 ```
 
-### Manual
+### macOS
 
-### Dependencies
+GoPlaying works natively on macOS using AppleScript to control Spotify.
 
+#### Dependencies
+- go
+- Spotify app
+
+### Linux
+
+#### Dependencies
 - go
 - playerctl
+
+### Manual Installation
 
 1. Clone the repository
 ```bash
