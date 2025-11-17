@@ -72,7 +72,10 @@ func (p *PlayerctlController) GetPosition() (float64, error) {
 	}
 
 	var position float64
-	fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &position)
+	n, err := fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &position)
+	if n != 1 || err != nil {
+		return 0, errors.New("failed to parse position")
+	}
 
 	return position, nil
 }
