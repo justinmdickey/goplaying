@@ -64,7 +64,13 @@ func getSongInfo(mc MediaController) (SongData, error) {
 
 	data.CurrentTime = formatTime(int64(position))
 	data.TotalTime = formatTime(duration)
-	data.Progress = position / float64(duration)
+
+	// Guard against division by zero
+	if duration > 0 {
+		data.Progress = position / float64(duration)
+	} else {
+		data.Progress = 0.0
+	}
 
 	return data, nil
 }
@@ -93,11 +99,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		case "p":
-			m.mediaController.Control("play-pause")
+			if err := m.mediaController.Control("play-pause"); err != nil {
+				m.lastError = err
+			}
 		case "n":
-			m.mediaController.Control("next")
+			if err := m.mediaController.Control("next"); err != nil {
+				m.lastError = err
+			}
 		case "b":
-			m.mediaController.Control("previous")
+			if err := m.mediaController.Control("previous"); err != nil {
+				m.lastError = err
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

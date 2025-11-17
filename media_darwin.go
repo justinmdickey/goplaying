@@ -40,7 +40,7 @@ func (a *AppleScriptController) GetMetadata() (title, artist, album, status stri
 	// Get track information
 	script := `tell application "Spotify"
 		if player state is stopped then
-			return "||stopped"
+			error "no song playing"
 		end if
 		set trackName to name of current track
 		set trackArtist to artist of current track
@@ -51,7 +51,7 @@ func (a *AppleScriptController) GetMetadata() (title, artist, album, status stri
 
 	output, err := a.runAppleScript(script)
 	if err != nil {
-		return "", "", "", "", errors.New("can't get metadata")
+		return "", "", "", "", errors.New("no song playing")
 	}
 
 	if output == "" {
