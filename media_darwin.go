@@ -102,7 +102,10 @@ func (a *AppleScriptController) GetPosition() (float64, error) {
 	}
 
 	var position float64
-	fmt.Sscanf(output, "%f", &position)
+	n, err := fmt.Sscanf(output, "%f", &position)
+	if err != nil || n != 1 {
+		return 0, errors.New("failed to parse position")
+	}
 
 	return position, nil
 }
