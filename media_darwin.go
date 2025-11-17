@@ -81,7 +81,10 @@ func (a *AppleScriptController) GetDuration() (int64, error) {
 	}
 
 	var duration int64
-	fmt.Sscanf(output, "%d", &duration)
+	n, err := fmt.Sscanf(output, "%d", &duration)
+	if err != nil || n != 1 {
+		return 0, errors.New("failed to parse duration")
+	}
 	// Convert from milliseconds to seconds
 	duration = duration / 1000
 
