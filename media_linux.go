@@ -53,7 +53,10 @@ func (p *PlayerctlController) GetDuration() (int64, error) {
 	}
 
 	var duration int64
-	fmt.Sscanf(strings.TrimSpace(out.String()), "%d", &duration)
+	n, err := fmt.Sscanf(strings.TrimSpace(out.String()), "%d", &duration)
+	if n != 1 || err != nil {
+		return 0, errors.New("failed to parse duration")
+	}
 	// Convert from microseconds to seconds
 	duration = duration / 1e6
 
