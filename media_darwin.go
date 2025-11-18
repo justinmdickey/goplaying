@@ -162,18 +162,18 @@ func (a *AppleScriptController) GetDuration() (int64, error) {
 		return 0, errors.New("can't get duration")
 	}
 
-	var duration int64
-	n, err := fmt.Sscanf(output, "%d", &duration)
+	var duration float64
+	n, err := fmt.Sscanf(output, "%f", &duration)
 	if err != nil || n != 1 {
 		return 0, errors.New("failed to parse duration")
 	}
 
-	// Apple Music returns duration in seconds, Spotify in milliseconds
+	// Apple Music returns duration in seconds (as float), Spotify in milliseconds (as int)
 	if player == "Spotify" {
 		duration = duration / 1000
 	}
 
-	return duration, nil
+	return int64(duration), nil
 }
 
 func (a *AppleScriptController) GetPosition() (float64, error) {
