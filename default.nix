@@ -7,7 +7,7 @@
     fileset = lib.fileset.unions [
       ./go.mod
       ./go.sum
-      ./main.go
+      (lib.fileset.fileFilter (file: file.hasExt "go") ./.)
     ];
   };
 
