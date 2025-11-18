@@ -15,15 +15,19 @@ This is a basic Now Playing TUI written in Go. I wanted a simple way to see what
 
 Download the latest release for your platform from the [Releases page](https://github.com/justinmdickey/goplaying/releases):
 
-- **Linux (amd64)**: `goplaying-linux-amd64`
-- **Linux (arm64)**: `goplaying-linux-arm64`
-- **macOS (Intel)**: `goplaying-darwin-amd64`
-- **macOS (Apple Silicon)**: `goplaying-darwin-arm64`
+- **Linux (amd64)**: `goplaying_*_Linux_x86_64.tar.gz`
+- **Linux (arm64)**: `goplaying_*_Linux_arm64.tar.gz`
+- **macOS (Intel)**: `goplaying_*_Darwin_x86_64.tar.gz`
+- **macOS (Apple Silicon)**: `goplaying_*_Darwin_arm64.tar.gz`
 
-Make the binary executable and move it to your PATH:
+Extract and install:
 ```bash
-chmod +x goplaying-*
-sudo mv goplaying-* /usr/local/bin/goplaying
+# Extract the archive
+tar -xzf goplaying_*_Linux_x86_64.tar.gz  # or your platform's archive
+
+# Make executable and move to PATH
+chmod +x goplaying
+sudo mv goplaying /usr/local/bin/
 ```
 
 ### Arch Linux
