@@ -49,7 +49,7 @@ brews:
     homepage: "https://github.com/justinmdickey/goplaying"
     description: "Cross-platform Spotify Now Playing TUI for Linux and macOS"
     license: "MIT"
-    folder: Formula
+    directory: Formula
     install: |
       bin.install "goplaying"
     test: |
