@@ -29,11 +29,11 @@ type SongData struct {
 }
 
 type model struct {
-	songData       SongData
-	color          string
-	width          int
-	height         int
-	lastError      error
+	songData        SongData
+	color           string
+	width           int
+	height          int
+	lastError       error
 	mediaController MediaController
 }
 
@@ -188,13 +188,13 @@ func (m model) View() string {
 		Width(50).
 		Render(titleStyle.Render("                Now Playing") + "\n\n" + content.String())
 
-  helpText := lipgloss.JoinHorizontal(
-    lipgloss.Center,
-    "Play/Pause: " + highlight.Render("p"),
-    "  Next: " + highlight.Render("n"),
-    "  Previous: " + highlight.Render("b"),
-    "  Quit: " + highlight.Render("q"),
-)
+	helpText := lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		"Play/Pause: "+highlight.Render("p"),
+		"  Next: "+highlight.Render("n"),
+		"  Previous: "+highlight.Render("b"),
+		"  Quit: "+highlight.Render("q"),
+	)
 
 	fullUI := lipgloss.JoinVertical(lipgloss.Center, contentStr, "\n"+helpText)
 
