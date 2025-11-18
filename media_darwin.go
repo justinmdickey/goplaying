@@ -41,9 +41,14 @@ func NewMediaController() MediaController {
 
 func (m *MediaRemoteController) runHelper(args ...string) (string, error) {
 	cmd := exec.Command(m.helperPath, args...)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
+		// Include stderr in error message for debugging
+		if errOut.Len() > 0 {
+			return "", fmt.Errorf("%v: %s", err, errOut.String())
+		}
 		return "", err
 	}
 	return strings.TrimSpace(out.String()), nil
