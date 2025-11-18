@@ -40,6 +40,24 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 
+brews:
+  - name: goplaying
+    repository:
+      owner: justinmdickey
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/justinmdickey/goplaying"
+    description: "Cross-platform Spotify Now Playing TUI for Linux and macOS"
+    license: "MIT"
+    folder: Formula
+    install: |
+      bin.install "goplaying"
+    test: |
+      system "#{bin}/goplaying", "--version"
+    caveats: |
+      On macOS: Requires Spotify app (uses AppleScript)
+      On Linux: Requires playerctl to be installed separately
+
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
 

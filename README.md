@@ -11,6 +11,17 @@ This is a basic Now Playing TUI written in Go. I wanted a simple way to see what
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+The easiest way to install on macOS:
+
+```bash
+brew tap justinmdickey/tap
+brew install goplaying
+```
+
+**Note**: On macOS, requires Spotify app. On Linux, you'll need to install `playerctl` separately.
+
 ### Pre-built Binaries
 
 Download the latest release for your platform from the [Releases page](https://github.com/justinmdickey/goplaying/releases):
