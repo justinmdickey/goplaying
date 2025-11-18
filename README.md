@@ -4,7 +4,12 @@
 
 ## Description
 
-This is a basic Now Playing TUI written in Go. I wanted a simple way to see what was playing on my Spotify account without having to open the app. This cross-platform solution works on both Linux (using playerctl) and macOS (using AppleScript) to get the currently playing song and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+This is a basic Now Playing TUI written in Go. A simple way to see what's currently playing without having to open a music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using MediaRemote framework) to get the currently playing audio system-wide and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+
+**Works with any audio source:**
+- Music apps (Apple Music, Spotify, VLC, etc.)
+- Web browsers (YouTube, Spotify Web, SoundCloud, etc.)
+- Any application playing audio on your system
 
 ![GoPlaying](assets/GoPlaying.jpeg)
 
@@ -19,7 +24,7 @@ brew tap justinmdickey/tap
 brew install goplaying
 ```
 
-**Note**: On macOS, requires Spotify app. On Linux, you'll need to install `playerctl` separately.
+**Note**: On macOS, works with any audio source system-wide. On Linux, you'll need to install `playerctl` separately.
 
 ### Pre-built Binaries
 
@@ -49,11 +54,11 @@ yay -S goplaying-git
 
 ### macOS
 
-GoPlaying works natively on macOS using AppleScript to control Spotify.
+GoPlaying works natively on macOS using the MediaRemote framework to get system-wide Now Playing information. This works with any audio source (Apple Music, Spotify, browsers, etc.).
 
 #### Dependencies
 - go
-- Spotify app
+- Swift compiler (comes with Xcode or Command Line Tools)
 
 ### Linux
 
@@ -73,15 +78,21 @@ git clone https://github.com/justinmdickey/goplaying.git
 cd goplaying
 ```
 
-3. Run `go build`
+3. Build the project
 ```bash
-go build
+# On macOS, use the darwin target to build both the helper and main binary
+make darwin
+
+# On Linux, just build the main binary
+make linux
 ```
 
 4. Run `./goplaying`
 ```bash
 ./goplaying
 ```
+
+**Note for macOS**: The `nowplaying` helper binary must be in the same directory as `goplaying`, or in `helpers/nowplaying/`. The Makefile handles this automatically.
 
 ## Usage
 
