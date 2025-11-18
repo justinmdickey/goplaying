@@ -1,5 +1,8 @@
 # GoPlaying
 
+[![Build and Release](https://github.com/justinmdickey/goplaying/workflows/Build%20and%20Release/badge.svg)](https://github.com/justinmdickey/goplaying/actions)
+[![Lint](https://github.com/justinmdickey/goplaying/workflows/Lint/badge.svg)](https://github.com/justinmdickey/goplaying/actions)
+
 ## Description
 
 This is a basic Now Playing TUI written in Go. I wanted a simple way to see what was playing on my Spotify account without having to open the app. This cross-platform solution works on both Linux (using playerctl) and macOS (using AppleScript) to get the currently playing song and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
@@ -7,6 +10,25 @@ This is a basic Now Playing TUI written in Go. I wanted a simple way to see what
 ![GoPlaying](assets/GoPlaying.jpeg)
 
 ## Installation
+
+### Pre-built Binaries
+
+Download the latest release for your platform from the [Releases page](https://github.com/justinmdickey/goplaying/releases):
+
+- **Linux (amd64)**: `goplaying_*_Linux_x86_64.tar.gz`
+- **Linux (arm64)**: `goplaying_*_Linux_arm64.tar.gz`
+- **macOS (Intel)**: `goplaying_*_Darwin_x86_64.tar.gz`
+- **macOS (Apple Silicon)**: `goplaying_*_Darwin_arm64.tar.gz`
+
+Extract and install:
+```bash
+# Extract the archive
+tar -xzf goplaying_*_Linux_x86_64.tar.gz  # or your platform's archive
+
+# Make executable and move to PATH
+chmod +x goplaying
+sudo mv goplaying /usr/local/bin/
+```
 
 ### Arch Linux
 
