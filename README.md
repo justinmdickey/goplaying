@@ -1,7 +1,6 @@
 # GoPlaying
 
 [![Build and Release](https://github.com/justinmdickey/goplaying/workflows/Build%20and%20Release/badge.svg)](https://github.com/justinmdickey/goplaying/actions)
-[![Lint](https://github.com/justinmdickey/goplaying/workflows/Lint/badge.svg)](https://github.com/justinmdickey/goplaying/actions)
 
 ## Description
 
