@@ -62,11 +62,12 @@ func getMetadata() {
         // Try both old and new key formats
         for key in info.keys {
             let keyStr = String(describing: key)
-            if keyStr.contains("Title") {
+            // Try both old and new key formats with priority, avoid accidental matches
+            if keyStr == "kMRMediaRemoteNowPlayingInfoTitle" || (keyStr.hasSuffix("Title") && !keyStr.contains("Album")) {
                 title = info[key] as? String ?? title
-            } else if keyStr.contains("Artist") {
+            } else if keyStr == "kMRMediaRemoteNowPlayingInfoArtist" || keyStr.hasSuffix("Artist") {
                 artist = info[key] as? String ?? artist
-            } else if keyStr.contains("Album") {
+            } else if keyStr == "kMRMediaRemoteNowPlayingInfoAlbum" || keyStr.hasSuffix("Album") {
                 album = info[key] as? String ?? album
             }
         }
