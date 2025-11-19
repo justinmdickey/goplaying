@@ -22,7 +22,7 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: default
+  - id: targz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -30,9 +30,19 @@ archives:
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
-    formats:
-      - tar.gz
-      - zip
+    format: tar.gz
+    files:
+      - README.md
+      - LICENSE
+  - id: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format: zip
     files:
       - README.md
       - LICENSE
@@ -42,6 +52,8 @@ checksum:
 
 brews:
   - name: goplaying
+    ids:
+      - targz
     repository:
       owner: justinmdickey
       name: homebrew-tap
