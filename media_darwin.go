@@ -12,10 +12,11 @@ import (
 	"strings"
 )
 
-// MediaRemoteController implements MediaController using MediaRemote framework
-// This provides system-wide Now Playing info for ANY audio source on macOS
-type MediaRemoteController struct {
-	helperPath string
+// HybridController implements MediaController using MediaRemote with AppleScript fallback
+// This provides reliable Now Playing info for music apps on macOS
+type HybridController struct {
+	helperPath    string
+	currentPlayer string
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -34,13 +35,51 @@ func NewMediaController() MediaController {
 		}
 	}
 
-	return &MediaRemoteController{
+	return &HybridController{
 		helperPath: helperPath,
 	}
 }
 
-func (m *MediaRemoteController) runHelper(args ...string) (string, error) {
-	cmd := exec.Command(m.helperPath, args...)
+func (h *HybridController) runAppleScript(script string) (string, error) {
+	cmd := exec.Command("osascript", "-e", script)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+// findActivePlayer checks if Music or Spotify are playing
+func (h *HybridController) findActivePlayer() (string, error) {
+	players := []string{"Music", "Spotify"}
+
+	for _, player := range players {
+		checkScript := fmt.Sprintf(`
+			tell application "System Events"
+				if exists (process "%s") then
+					try
+						tell application "%s"
+							if player state is not stopped then
+								return "true"
+							end if
+						end tell
+					end try
+				end if
+				return "false"
+			end tell`, player, player)
+
+		result, err := h.runAppleScript(checkScript)
+		if err == nil && result == "true" {
+			return player, nil
+		}
+	}
+
+	return "", errors.New("no active music player found")
+}
+
+func (h *HybridController) runHelper(args ...string) (string, error) {
+	cmd := exec.Command(h.helperPath, args...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
@@ -54,13 +93,50 @@ func (m *MediaRemoteController) runHelper(args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func (m *MediaRemoteController) GetMetadata() (title, artist, album, status string, err error) {
-	output, err := m.runHelper("metadata")
+func (h *HybridController) GetMetadata() (title, artist, album, status string, err error) {
+	// Try MediaRemote first (works with any app that registers Now Playing)
+	output, err := h.runHelper("metadata")
+	if err == nil && output != "" {
+		parts := strings.Split(output, "|")
+		if len(parts) >= 4 {
+			return strings.TrimSpace(parts[0]),
+				strings.TrimSpace(parts[1]),
+				strings.TrimSpace(parts[2]),
+				strings.TrimSpace(parts[3]),
+				nil
+		}
+	}
+
+	// Fallback to AppleScript for Music/Spotify
+	player, err := h.findActivePlayer()
 	if err != nil {
 		return "", "", "", "", errors.New("no song playing")
 	}
 
-	if output == "" {
+	h.currentPlayer = player
+
+	script := fmt.Sprintf(`tell application "%s"
+		if player state is stopped then
+			error "no song playing"
+		end if
+		set trackName to ""
+		set trackArtist to ""
+		set trackAlbum to ""
+		try
+			set trackName to name of current track
+		end try
+		try
+			set trackArtist to artist of current track
+		end try
+		try
+			set trackAlbum to album of current track
+		end try
+		set playerState to player state as string
+		return trackName & "|" & trackArtist & "|" & trackAlbum & "|" & playerState
+	end tell`, player)
+
+	output, err = h.runAppleScript(script)
+	if err != nil {
 		return "", "", "", "", errors.New("no song playing")
 	}
 
@@ -76,38 +152,127 @@ func (m *MediaRemoteController) GetMetadata() (title, artist, album, status stri
 		nil
 }
 
-func (m *MediaRemoteController) GetDuration() (int64, error) {
-	output, err := m.runHelper("duration")
+func (h *HybridController) GetDuration() (int64, error) {
+	// Try MediaRemote first
+	output, err := h.runHelper("duration")
+	if err == nil {
+		var duration int64
+		n, err := fmt.Sscanf(output, "%d", &duration)
+		if err == nil && n == 1 && duration > 0 {
+			return duration, nil
+		}
+	}
+
+	// Fallback to AppleScript
+	player := h.currentPlayer
+	if player == "" {
+		var err error
+		player, err = h.findActivePlayer()
+		if err != nil {
+			return 0, nil
+		}
+	}
+
+	script := fmt.Sprintf(`tell application "%s"
+		try
+			return duration of current track
+		on error
+			return 0
+		end try
+	end tell`, player)
+
+	output, err = h.runAppleScript(script)
 	if err != nil {
-		return 0, errors.New("can't get duration")
+		return 0, nil
 	}
 
-	var duration int64
-	n, err := fmt.Sscanf(output, "%d", &duration)
+	var duration float64
+	n, err := fmt.Sscanf(output, "%f", &duration)
 	if err != nil || n != 1 {
-		return 0, nil // Return 0 for streams without duration
+		return 0, nil
 	}
 
-	return duration, nil
+	// Apple Music returns seconds, Spotify returns milliseconds
+	if player == "Spotify" {
+		duration = duration / 1000
+	}
+
+	return int64(duration), nil
 }
 
-func (m *MediaRemoteController) GetPosition() (float64, error) {
-	output, err := m.runHelper("position")
+func (h *HybridController) GetPosition() (float64, error) {
+	// Try MediaRemote first
+	output, err := h.runHelper("position")
+	if err == nil {
+		var position float64
+		n, err := fmt.Sscanf(output, "%f", &position)
+		if err == nil && n == 1 {
+			return position, nil
+		}
+	}
+
+	// Fallback to AppleScript
+	player := h.currentPlayer
+	if player == "" {
+		var err error
+		player, err = h.findActivePlayer()
+		if err != nil {
+			return 0, nil
+		}
+	}
+
+	script := fmt.Sprintf(`tell application "%s"
+		try
+			return player position
+		on error
+			return 0
+		end try
+	end tell`, player)
+
+	output, err = h.runAppleScript(script)
 	if err != nil {
-		return 0, errors.New("can't get position")
+		return 0, nil
 	}
 
 	var position float64
 	n, err := fmt.Sscanf(output, "%f", &position)
 	if err != nil || n != 1 {
-		return 0, nil // Return 0 for streams without position
+		return 0, nil
 	}
 
 	return position, nil
 }
 
-func (m *MediaRemoteController) Control(command string) error {
-	_, err := m.runHelper(command)
+func (h *HybridController) Control(command string) error {
+	// Try MediaRemote first
+	_, err := h.runHelper(command)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback to AppleScript
+	player := h.currentPlayer
+	if player == "" {
+		var err error
+		player, err = h.findActivePlayer()
+		if err != nil {
+			return err
+		}
+	}
+
+	var script string
+	switch command {
+	case "play-pause":
+		script = fmt.Sprintf(`tell application "%s" to playpause`, player)
+	case "next":
+		script = fmt.Sprintf(`tell application "%s" to next track`, player)
+	case "previous":
+		script = fmt.Sprintf(`tell application "%s" to previous track`, player)
+	default:
+		return fmt.Errorf("unknown command: %s", command)
+	}
+
+	_, err = h.runAppleScript(script)
 	return err
 }
 

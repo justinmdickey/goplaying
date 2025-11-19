@@ -4,12 +4,12 @@
 
 ## Description
 
-This is a basic Now Playing TUI written in Go. A simple way to see what's currently playing without having to open a music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using MediaRemote framework) to get the currently playing audio system-wide and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+This is a basic Now Playing TUI written in Go. A simple way to see what's currently playing without having to open a music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using MediaRemote framework with AppleScript fallback) to get currently playing music and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
 
-**Works with any audio source:**
-- Music apps (Apple Music, Spotify, VLC, etc.)
-- Web browsers (YouTube, Spotify Web, SoundCloud, etc.)
-- Any application playing audio on your system
+**Works with:**
+- Music apps (Apple Music, Spotify, VLC, etc.) ✅
+- Web browsers (YouTube, Spotify Web, etc.) - when the website implements Media Session API ⚠️
+- Any application that registers with your system's Now Playing interface
 
 ![GoPlaying](assets/GoPlaying.jpeg)
 
@@ -24,7 +24,7 @@ brew tap justinmdickey/tap
 brew install goplaying
 ```
 
-**Note**: On macOS, works with any audio source system-wide. On Linux, you'll need to install `playerctl` separately.
+**Note**: On macOS, works with Apple Music, Spotify, and other music apps that register with the system's Now Playing interface. Browser support depends on the website implementing the Media Session API. On Linux, you'll need to install `playerctl` separately.
 
 ### Pre-built Binaries
 
@@ -54,7 +54,10 @@ yay -S goplaying-git
 
 ### macOS
 
-GoPlaying works natively on macOS using the MediaRemote framework to get system-wide Now Playing information. This works with any audio source (Apple Music, Spotify, browsers, etc.).
+GoPlaying works natively on macOS using a hybrid approach:
+- MediaRemote framework for apps that register with macOS Now Playing
+- AppleScript fallback for Apple Music and Spotify
+- Works best with dedicated music apps; browser support varies by website
 
 #### Dependencies
 - go
