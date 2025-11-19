@@ -18,4 +18,4 @@ linux: goplaying
 
 clean:
 	rm -f goplaying
-	cd helpers/nowplaying && $(MAKE) clean
+	test -d helpers/nowplaying && cd helpers/nowplaying && $(MAKE) clean || true
