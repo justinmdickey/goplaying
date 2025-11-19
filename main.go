@@ -87,7 +87,7 @@ func truncateText(text string, max int) string {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
 	})
 }
@@ -122,7 +122,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.songData = data
 			m.lastError = nil
 		}
-		return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 			return tickMsg{}
 		})
 	}
