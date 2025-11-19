@@ -40,14 +40,14 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 
-homebrew:
+brews:
   - name: goplaying
     repository:
       owner: justinmdickey
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/justinmdickey/goplaying"
-    description: "Cross-platform Spotify Now Playing TUI for Linux and macOS"
+    description: "Cross-platform Now Playing TUI for Spotify, Apple Music, and more"
     license: "MIT"
     directory: Formula
     install: |
@@ -55,7 +55,7 @@ homebrew:
     test: |
       system "#{bin}/goplaying", "--version"
     caveats: |
-      On macOS: Requires Spotify app (uses AppleScript)
+      On macOS: Supports Spotify and Apple Music (uses AppleScript)
       On Linux: Requires playerctl to be installed separately
 
 snapshot:
@@ -96,7 +96,7 @@ release:
   header: |
     ## GoPlaying {{.Version}}
 
-    Cross-platform Spotify Now Playing TUI for Linux and macOS.
+    Cross-platform Now Playing TUI for Spotify, Apple Music, and more on Linux and macOS.
   footer: |
     ## Installation
 
