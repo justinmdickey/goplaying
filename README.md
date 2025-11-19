@@ -4,7 +4,15 @@
 
 ## Description
 
-This is a basic Now Playing TUI written in Go. I wanted a simple way to see what was playing on my Spotify account without having to open the app. This cross-platform solution works on both Linux (using playerctl) and macOS (using AppleScript) to get the currently playing song and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+A simple Now Playing TUI written in Go. See what's currently playing without opening your music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using a hybrid MediaRemote + AppleScript approach) to display currently playing music in your terminal with basic playback controls.
+
+**Supported on macOS:**
+- Apple Music (including Radio streams)
+- Spotify
+- Other apps that implement macOS Now Playing API
+
+**Supported on Linux:**
+- Any MPRIS-compatible player (via playerctl)
 
 ![GoPlaying](assets/GoPlaying.jpeg)
 
@@ -19,7 +27,7 @@ brew tap justinmdickey/tap
 brew install goplaying
 ```
 
-**Note**: On macOS, requires Spotify app. On Linux, you'll need to install `playerctl` separately.
+**Note**: On Linux, you'll need to install `playerctl` separately.
 
 ### Pre-built Binaries
 
@@ -49,11 +57,11 @@ yay -S goplaying-git
 
 ### macOS
 
-GoPlaying works natively on macOS using AppleScript to control Spotify.
+GoPlaying works natively on macOS with Apple Music and Spotify using a hybrid MediaRemote + AppleScript approach.
 
 #### Dependencies
-- go
-- Spotify app
+- Go
+- Swift compiler (included with Xcode or Command Line Tools)
 
 ### Linux
 
@@ -73,15 +81,21 @@ git clone https://github.com/justinmdickey/goplaying.git
 cd goplaying
 ```
 
-3. Run `go build`
+3. Build the project
 ```bash
-go build
+# On macOS, use the darwin target to build both the helper and main binary
+make darwin
+
+# On Linux, just build the main binary
+make linux
 ```
 
 4. Run `./goplaying`
 ```bash
 ./goplaying
 ```
+
+**Note for macOS**: The `nowplaying` helper binary should be in the same directory as `goplaying`, or in `helpers/nowplaying/`. The Makefile handles this automatically. If the helper is not found, the app will automatically fall back to AppleScript-only mode, which still works with Apple Music and Spotify but won't detect other apps.
 
 ## Usage
 
