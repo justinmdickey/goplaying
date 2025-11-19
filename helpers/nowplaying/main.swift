@@ -85,7 +85,12 @@ func getMetadata() {
         }
     }
 
-    _ = semaphore.wait(timeout: .now() + 2)
+    let result = semaphore.wait(timeout: .now() + 2)
+
+    if result == .timedOut {
+        fputs("Error: Timeout waiting for Now Playing info\n", stderr)
+        exit(1)
+    }
 
     if !hasInfo {
         fputs("Error: No media playing\n", stderr)
@@ -112,7 +117,10 @@ func getDuration() {
         semaphore.signal()
     }
 
-    _ = semaphore.wait(timeout: .now() + 2)
+    let result = semaphore.wait(timeout: .now() + 2)
+    if result == .timedOut {
+        fputs("Warning: Timeout getting duration\n", stderr)
+    }
 }
 
 func getPosition() {
@@ -134,12 +142,18 @@ func getPosition() {
         semaphore.signal()
     }
 
-    _ = semaphore.wait(timeout: .now() + 2)
+    let result = semaphore.wait(timeout: .now() + 2)
+    if result == .timedOut {
+        fputs("Warning: Timeout getting position\n", stderr)
+    }
 }
 
 func sendCommand(_ command: MRCommand) {
     _ = MRMediaRemoteSendCommand(command.rawValue, nil)
-    // Give command time to execute
+    // Brief delay to ensure MediaRemote command is processed before returning.
+    // MediaRemote sends commands asynchronously to the target app, and returning
+    // too quickly can cause the app to miss rapid successive commands.
+    // 100ms provides reliable command delivery without noticeable delay to users.
     usleep(100000) // 100ms
 }
 

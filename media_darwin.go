@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -22,22 +23,32 @@ type HybridController struct {
 // NewMediaController creates a new media controller for the current platform
 func NewMediaController() MediaController {
 	// Find the nowplaying helper
-	// Try in the same directory as the binary first, then in helpers/nowplaying/
-	helperPath := "./nowplaying"
-	if _, err := exec.LookPath(helperPath); err != nil {
-		helperPath = "./helpers/nowplaying/nowplaying"
-		if _, err := exec.LookPath(helperPath); err != nil {
-			// Try relative to executable
-			if exePath, err := exec.LookPath("goplaying"); err == nil {
-				exeDir := filepath.Dir(exePath)
-				helperPath = filepath.Join(exeDir, "nowplaying")
-			}
+	// Try multiple locations in order of preference
+	var helperPath string
+
+	// 1. Same directory as the binary
+	helperPath = "./nowplaying"
+	if _, err := os.Stat(helperPath); err == nil {
+		return &HybridController{helperPath: helperPath}
+	}
+
+	// 2. helpers/nowplaying/ subdirectory
+	helperPath = "./helpers/nowplaying/nowplaying"
+	if _, err := os.Stat(helperPath); err == nil {
+		return &HybridController{helperPath: helperPath}
+	}
+
+	// 3. Relative to executable location
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		helperPath = filepath.Join(exeDir, "nowplaying")
+		if _, err := os.Stat(helperPath); err == nil {
+			return &HybridController{helperPath: helperPath}
 		}
 	}
 
-	return &HybridController{
-		helperPath: helperPath,
-	}
+	// If helper not found, return controller anyway - will fallback to AppleScript only
+	return &HybridController{helperPath: ""}
 }
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
@@ -79,6 +90,11 @@ func (h *HybridController) findActivePlayer() (string, error) {
 }
 
 func (h *HybridController) runHelper(args ...string) (string, error) {
+	// If helper path is empty, skip MediaRemote and fall back to AppleScript
+	if h.helperPath == "" {
+		return "", errors.New("helper not available")
+	}
+
 	cmd := exec.Command(h.helperPath, args...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
@@ -166,9 +182,10 @@ func (h *HybridController) GetDuration() (int64, error) {
 	// Fallback to AppleScript
 	player := h.currentPlayer
 	if player == "" {
-		var err error
-		player, err = h.findActivePlayer()
-		if err != nil {
+		var findErr error
+		player, findErr = h.findActivePlayer()
+		if findErr != nil {
+			// No player found - return 0 but no error (not playing is not an error state)
 			return 0, nil
 		}
 	}
@@ -183,17 +200,20 @@ func (h *HybridController) GetDuration() (int64, error) {
 
 	output, err = h.runAppleScript(script)
 	if err != nil {
-		return 0, nil
+		// AppleScript execution failed - this is an error
+		return 0, fmt.Errorf("failed to get duration via AppleScript: %w", err)
 	}
 
 	var duration float64
 	n, err := fmt.Sscanf(output, "%f", &duration)
 	if err != nil || n != 1 {
-		return 0, nil
+		// Parse failed - this is an error
+		return 0, fmt.Errorf("failed to parse duration: %w", err)
 	}
 
-	// Apple Music returns seconds, Spotify returns milliseconds
-	if player == "Spotify" {
+	// Auto-detect unit: values > 1000 are likely milliseconds, otherwise seconds
+	// This handles both Spotify (milliseconds) and Apple Music (seconds) robustly
+	if duration > 1000 {
 		duration = duration / 1000
 	}
 
@@ -214,9 +234,10 @@ func (h *HybridController) GetPosition() (float64, error) {
 	// Fallback to AppleScript
 	player := h.currentPlayer
 	if player == "" {
-		var err error
-		player, err = h.findActivePlayer()
-		if err != nil {
+		var findErr error
+		player, findErr = h.findActivePlayer()
+		if findErr != nil {
+			// No player found - return 0 but no error (not playing is not an error state)
 			return 0, nil
 		}
 	}
@@ -231,13 +252,15 @@ func (h *HybridController) GetPosition() (float64, error) {
 
 	output, err = h.runAppleScript(script)
 	if err != nil {
-		return 0, nil
+		// AppleScript execution failed - this is an error
+		return 0, fmt.Errorf("failed to get position via AppleScript: %w", err)
 	}
 
 	var position float64
 	n, err := fmt.Sscanf(output, "%f", &position)
 	if err != nil || n != 1 {
-		return 0, nil
+		// Parse failed - this is an error
+		return 0, fmt.Errorf("failed to parse position: %w", err)
 	}
 
 	return position, nil

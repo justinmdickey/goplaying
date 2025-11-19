@@ -95,7 +95,7 @@ make linux
 ./goplaying
 ```
 
-**Note for macOS**: The `nowplaying` helper binary must be in the same directory as `goplaying`, or in `helpers/nowplaying/`. The Makefile handles this automatically.
+**Note for macOS**: The `nowplaying` helper binary should be in the same directory as `goplaying`, or in `helpers/nowplaying/`. The Makefile handles this automatically. If the helper is not found, the app will automatically fall back to AppleScript-only mode, which still works with Apple Music and Spotify but won't detect other apps.
 
 ## Usage
 
