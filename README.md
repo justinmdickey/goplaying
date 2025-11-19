@@ -4,12 +4,15 @@
 
 ## Description
 
-This is a basic Now Playing TUI written in Go. A simple way to see what's currently playing without having to open a music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using MediaRemote framework with AppleScript fallback) to get currently playing music and display it in the terminal. It even gives you basic controls to play/pause, skip, and go back.
+A simple Now Playing TUI written in Go. See what's currently playing without opening your music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using a hybrid MediaRemote + AppleScript approach) to display currently playing music in your terminal with basic playback controls.
 
-**Works with:**
-- Music apps (Apple Music, Spotify, VLC, etc.) ✅
-- Web browsers (YouTube, Spotify Web, etc.) - when the website implements Media Session API ⚠️
-- Any application that registers with your system's Now Playing interface
+**Supported on macOS:**
+- Apple Music (including Radio streams)
+- Spotify
+- Other apps that implement macOS Now Playing API
+
+**Supported on Linux:**
+- Any MPRIS-compatible player (via playerctl)
 
 ![GoPlaying](assets/GoPlaying.jpeg)
 
@@ -24,7 +27,7 @@ brew tap justinmdickey/tap
 brew install goplaying
 ```
 
-**Note**: On macOS, works with Apple Music, Spotify, and other music apps that register with the system's Now Playing interface. Browser support depends on the website implementing the Media Session API. On Linux, you'll need to install `playerctl` separately.
+**Note**: On Linux, you'll need to install `playerctl` separately.
 
 ### Pre-built Binaries
 
@@ -54,14 +57,11 @@ yay -S goplaying-git
 
 ### macOS
 
-GoPlaying works natively on macOS using a hybrid approach:
-- MediaRemote framework for apps that register with macOS Now Playing
-- AppleScript fallback for Apple Music and Spotify
-- Works best with dedicated music apps; browser support varies by website
+GoPlaying works natively on macOS with Apple Music and Spotify using a hybrid MediaRemote + AppleScript approach.
 
 #### Dependencies
-- go
-- Swift compiler (comes with Xcode or Command Line Tools)
+- Go
+- Swift compiler (included with Xcode or Command Line Tools)
 
 ### Linux
 

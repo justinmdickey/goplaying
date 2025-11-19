@@ -142,39 +142,10 @@ func sendCommand(_ command: MRCommand) {
     usleep(100000) // 100ms
 }
 
-func debugInfo() {
-    let semaphore = DispatchSemaphore(value: 0)
-
-    fputs("=== MediaRemote Debug Info ===\n", stderr)
-
-    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
-        fputs("Now Playing Info dictionary:\n", stderr)
-
-        if info.isEmpty {
-            fputs("  (empty - no data returned)\n", stderr)
-        } else {
-            fputs("  Keys and values:\n", stderr)
-            for (key, value) in info {
-                let keyStr = String(describing: key)
-                let valueStr = String(describing: value)
-                fputs("    \(keyStr) = \(valueStr)\n", stderr)
-            }
-        }
-
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { isPlaying in
-            fputs("\nIs Playing: \(isPlaying)\n", stderr)
-            semaphore.signal()
-        }
-    }
-
-    _ = semaphore.wait(timeout: .now() + 2)
-    fputs("=== End Debug Info ===\n", stderr)
-}
-
 // Main
 guard CommandLine.arguments.count > 1 else {
     fputs("Usage: nowplaying <command>\n", stderr)
-    fputs("Commands: metadata, duration, position, play-pause, next, previous, debug\n", stderr)
+    fputs("Commands: metadata, duration, position, play-pause, next, previous\n", stderr)
     exit(1)
 }
 
@@ -193,8 +164,6 @@ case "next":
     sendCommand(.nextTrack)
 case "previous":
     sendCommand(.previousTrack)
-case "debug":
-    debugInfo()
 default:
     fputs("Unknown command: \(command)\n", stderr)
     exit(1)

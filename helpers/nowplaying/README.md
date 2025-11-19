@@ -1,12 +1,11 @@
 # Now Playing Helper for macOS
 
-This Swift helper uses macOS's private MediaRemote framework to get system-wide Now Playing information. This works with **any** audio source on macOS, including:
+This Swift helper uses macOS's private MediaRemote framework to get Now Playing information from apps that register with the system's media controls. This includes:
 
 - Apple Music (including Radio streams)
 - Spotify
-- YouTube in any browser (Firefox, Safari, Chrome, etc.)
-- Any web audio
-- Any other media player
+- Other music players that implement macOS Now Playing API
+- Some browser audio (when websites implement Media Session API)
 
 ## Building
 
@@ -36,8 +35,6 @@ This will compile the `nowplaying` binary using Swift.
 
 ## How It Works
 
-The helper dynamically loads the MediaRemote framework (`/System/Library/PrivateFrameworks/MediaRemote.framework`) and calls its functions to get system-wide Now Playing information. This is the same framework macOS uses for the Control Center, keyboard media keys, and lock screen media controls.
+The helper dynamically loads the MediaRemote framework (`/System/Library/PrivateFrameworks/MediaRemote.framework`) and calls its functions to get Now Playing information. This is the same framework macOS uses for Control Center, keyboard media keys, and lock screen media controls.
 
-## Note
-
-MediaRemote is a private framework, but it's been stable and widely used by third-party apps for years. It provides the most reliable way to get system-wide media information on macOS.
+The main app uses this helper in combination with AppleScript for maximum reliability with Apple Music and Spotify.
