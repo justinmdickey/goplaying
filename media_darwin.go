@@ -18,7 +18,9 @@ import (
 type HybridController struct {
 	helperPath        string
 	currentPlayer     string
-	skipMediaRemote   bool // Skip MediaRemote if it failed previously for faster fallback
+	skipMediaRemote   bool    // Skip MediaRemote if it failed previously for faster fallback
+	cachedDuration    int64   // Cached duration from last metadata call
+	cachedPosition    float64 // Cached position from last metadata call
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -136,6 +138,8 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 
 	h.currentPlayer = player
 
+	// Get all data in a single AppleScript call for performance
+	// Returns: title|artist|album|status|duration|position
 	script := fmt.Sprintf(`tell application "%s"
 		if player state is stopped then
 			error "no song playing"
@@ -143,6 +147,8 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 		set trackName to ""
 		set trackArtist to ""
 		set trackAlbum to ""
+		set trackDuration to 0
+		set trackPosition to 0
 		try
 			set trackName to name of current track
 		end try
@@ -152,8 +158,14 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 		try
 			set trackAlbum to album of current track
 		end try
+		try
+			set trackDuration to duration of current track
+		end try
+		try
+			set trackPosition to player position
+		end try
 		set playerState to player state as string
-		return trackName & "|" & trackArtist & "|" & trackAlbum & "|" & playerState
+		return trackName & "|" & trackArtist & "|" & trackAlbum & "|" & playerState & "|" & trackDuration & "|" & trackPosition
 	end tell`, player)
 
 	output, err = h.runAppleScript(script)
@@ -162,9 +174,20 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 	}
 
 	parts := strings.Split(output, "|")
-	if len(parts) < 4 {
+	if len(parts) < 6 {
 		return "", "", "", "", errors.New("unexpected metadata format")
 	}
+
+	// Cache duration and position for GetDuration() and GetPosition() calls
+	var duration float64
+	fmt.Sscanf(strings.TrimSpace(parts[4]), "%f", &duration)
+	// Auto-detect unit: values > 1000 are likely milliseconds, otherwise seconds
+	if duration > 1000 {
+		duration = duration / 1000
+	}
+	h.cachedDuration = int64(duration)
+
+	fmt.Sscanf(strings.TrimSpace(parts[5]), "%f", &h.cachedPosition)
 
 	return strings.TrimSpace(parts[0]),
 		strings.TrimSpace(parts[1]),
@@ -186,45 +209,9 @@ func (h *HybridController) GetDuration() (int64, error) {
 		}
 	}
 
-	// Fallback to AppleScript
-	player := h.currentPlayer
-	if player == "" {
-		var findErr error
-		player, findErr = h.findActivePlayer()
-		if findErr != nil {
-			// No player found - return 0 but no error (not playing is not an error state)
-			return 0, nil
-		}
-	}
-
-	script := fmt.Sprintf(`tell application "%s"
-		try
-			return duration of current track
-		on error
-			return 0
-		end try
-	end tell`, player)
-
-	output, err = h.runAppleScript(script)
-	if err != nil {
-		// AppleScript execution failed - this is an error
-		return 0, fmt.Errorf("failed to get duration via AppleScript: %w", err)
-	}
-
-	var duration float64
-	n, err := fmt.Sscanf(output, "%f", &duration)
-	if err != nil || n != 1 {
-		// Parse failed - this is an error
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
-
-	// Auto-detect unit: values > 1000 are likely milliseconds, otherwise seconds
-	// This handles both Spotify (milliseconds) and Apple Music (seconds) robustly
-	if duration > 1000 {
-		duration = duration / 1000
-	}
-
-	return int64(duration), nil
+	// Return cached value from GetMetadata() call (batched AppleScript)
+	// This avoids a second osascript invocation for better performance
+	return h.cachedDuration, nil
 }
 
 func (h *HybridController) GetPosition() (float64, error) {
@@ -240,39 +227,9 @@ func (h *HybridController) GetPosition() (float64, error) {
 		}
 	}
 
-	// Fallback to AppleScript
-	player := h.currentPlayer
-	if player == "" {
-		var findErr error
-		player, findErr = h.findActivePlayer()
-		if findErr != nil {
-			// No player found - return 0 but no error (not playing is not an error state)
-			return 0, nil
-		}
-	}
-
-	script := fmt.Sprintf(`tell application "%s"
-		try
-			return player position
-		on error
-			return 0
-		end try
-	end tell`, player)
-
-	output, err = h.runAppleScript(script)
-	if err != nil {
-		// AppleScript execution failed - this is an error
-		return 0, fmt.Errorf("failed to get position via AppleScript: %w", err)
-	}
-
-	var position float64
-	n, err := fmt.Sscanf(output, "%f", &position)
-	if err != nil || n != 1 {
-		// Parse failed - this is an error
-		return 0, fmt.Errorf("failed to parse position: %w", err)
-	}
-
-	return position, nil
+	// Return cached value from GetMetadata() call (batched AppleScript)
+	// This avoids a second osascript invocation for better performance
+	return h.cachedPosition, nil
 }
 
 func (h *HybridController) Control(command string) error {
