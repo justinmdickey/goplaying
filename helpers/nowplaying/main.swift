@@ -85,7 +85,8 @@ func getMetadata() {
         }
     }
 
-    let result = semaphore.wait(timeout: .now() + 2)
+    // Short timeout for fast fallback to AppleScript if MediaRemote has no data
+    let result = semaphore.wait(timeout: .now() + 0.2)
 
     if result == .timedOut {
         fputs("Error: Timeout waiting for Now Playing info\n", stderr)
@@ -117,7 +118,8 @@ func getDuration() {
         semaphore.signal()
     }
 
-    let result = semaphore.wait(timeout: .now() + 2)
+    // Short timeout for fast fallback to AppleScript
+    let result = semaphore.wait(timeout: .now() + 0.2)
     if result == .timedOut {
         fputs("Warning: Timeout getting duration\n", stderr)
     }
@@ -142,7 +144,8 @@ func getPosition() {
         semaphore.signal()
     }
 
-    let result = semaphore.wait(timeout: .now() + 2)
+    // Short timeout for fast fallback to AppleScript
+    let result = semaphore.wait(timeout: .now() + 0.2)
     if result == .timedOut {
         fputs("Warning: Timeout getting position\n", stderr)
     }

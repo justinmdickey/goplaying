@@ -16,8 +16,9 @@ import (
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
 type HybridController struct {
-	helperPath    string
-	currentPlayer string
+	helperPath        string
+	currentPlayer     string
+	skipMediaRemote   bool // Skip MediaRemote if it failed previously for faster fallback
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -110,17 +111,21 @@ func (h *HybridController) runHelper(args ...string) (string, error) {
 }
 
 func (h *HybridController) GetMetadata() (title, artist, album, status string, err error) {
-	// Try MediaRemote first (works with any app that registers Now Playing)
-	output, err := h.runHelper("metadata")
-	if err == nil && output != "" {
-		parts := strings.Split(output, "|")
-		if len(parts) >= 4 {
-			return strings.TrimSpace(parts[0]),
-				strings.TrimSpace(parts[1]),
-				strings.TrimSpace(parts[2]),
-				strings.TrimSpace(parts[3]),
-				nil
+	// Try MediaRemote first if not previously failed (works with any app that registers Now Playing)
+	if !h.skipMediaRemote {
+		output, err := h.runHelper("metadata")
+		if err == nil && output != "" {
+			parts := strings.Split(output, "|")
+			if len(parts) >= 4 {
+				return strings.TrimSpace(parts[0]),
+					strings.TrimSpace(parts[1]),
+					strings.TrimSpace(parts[2]),
+					strings.TrimSpace(parts[3]),
+					nil
+			}
 		}
+		// MediaRemote failed - skip it for future calls this session
+		h.skipMediaRemote = true
 	}
 
 	// Fallback to AppleScript for Music/Spotify
@@ -169,13 +174,15 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 }
 
 func (h *HybridController) GetDuration() (int64, error) {
-	// Try MediaRemote first
-	output, err := h.runHelper("duration")
-	if err == nil {
-		var duration int64
-		n, err := fmt.Sscanf(output, "%d", &duration)
-		if err == nil && n == 1 && duration > 0 {
-			return duration, nil
+	// Try MediaRemote first if not previously failed
+	if !h.skipMediaRemote {
+		output, err := h.runHelper("duration")
+		if err == nil {
+			var duration int64
+			n, err := fmt.Sscanf(output, "%d", &duration)
+			if err == nil && n == 1 && duration > 0 {
+				return duration, nil
+			}
 		}
 	}
 
@@ -221,13 +228,15 @@ func (h *HybridController) GetDuration() (int64, error) {
 }
 
 func (h *HybridController) GetPosition() (float64, error) {
-	// Try MediaRemote first
-	output, err := h.runHelper("position")
-	if err == nil {
-		var position float64
-		n, err := fmt.Sscanf(output, "%f", &position)
-		if err == nil && n == 1 {
-			return position, nil
+	// Try MediaRemote first if not previously failed
+	if !h.skipMediaRemote {
+		output, err := h.runHelper("position")
+		if err == nil {
+			var position float64
+			n, err := fmt.Sscanf(output, "%f", &position)
+			if err == nil && n == 1 {
+				return position, nil
+			}
 		}
 	}
 
@@ -267,10 +276,12 @@ func (h *HybridController) GetPosition() (float64, error) {
 }
 
 func (h *HybridController) Control(command string) error {
-	// Try MediaRemote first
-	_, err := h.runHelper(command)
-	if err == nil {
-		return nil
+	// Try MediaRemote first if not previously failed
+	if !h.skipMediaRemote {
+		_, err := h.runHelper(command)
+		if err == nil {
+			return nil
+		}
 	}
 
 	// Fallback to AppleScript
