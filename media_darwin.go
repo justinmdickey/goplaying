@@ -168,8 +168,8 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 		return trackName & "|" & trackArtist & "|" & trackAlbum & "|" & playerState & "|" & trackDuration & "|" & trackPosition
 	end tell`, player)
 
-	output, err = h.runAppleScript(script)
-	if err != nil {
+	output, scriptErr := h.runAppleScript(script)
+	if scriptErr != nil {
 		return "", "", "", "", errors.New("no song playing")
 	}
 
@@ -263,7 +263,7 @@ func (h *HybridController) Control(command string) error {
 		return fmt.Errorf("unknown command: %s", command)
 	}
 
-	_, err = h.runAppleScript(script)
+	_, err := h.runAppleScript(script)
 	return err
 }
 
