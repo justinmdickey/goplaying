@@ -1,21 +1,29 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	"image/png"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nfnt/resize"
 )
 
 var colorFlag string
+var noArtworkFlag bool
 
 func init() {
 	flag.StringVar(&colorFlag, "color", "2", "Set the desired color (name or hex)")
 	flag.StringVar(&colorFlag, "c", "2", "Set the desired color (shorthand)")
+	flag.BoolVar(&noArtworkFlag, "no-artwork", false, "Disable album artwork display")
 }
 
 type SongData struct {
@@ -41,6 +49,11 @@ type model struct {
 	lastPositionTime time.Time // When we fetched that position
 	duration         int64     // Track duration in seconds
 	isPlaying        bool      // Whether song is currently playing
+
+	// Album artwork support
+	artworkEncoded   string // Kitty protocol-encoded artwork for display
+	supportsKitty    bool   // Whether terminal supports Kitty graphics
+	lastTrackID      string // Track ID for caching artwork (title+artist)
 }
 
 // UI refresh tick - fires every 100ms for smooth rendering
@@ -57,6 +70,7 @@ type songDataMsg struct {
 	status   string
 	duration int64
 	position float64
+	artwork  string // Kitty-encoded artwork
 	err      error
 }
 
@@ -69,6 +83,96 @@ func truncateText(text string, max int) string {
 		return text[:max-3] + "..."
 	}
 	return text
+}
+
+// Check if terminal supports Kitty graphics protocol
+func supportsKittyGraphics() bool {
+	term := os.Getenv("TERM")
+	termProgram := os.Getenv("TERM_PROGRAM")
+	
+	// Check TERM variable
+	if strings.Contains(term, "kitty") || strings.Contains(term, "konsole") {
+		return true
+	}
+	
+	// Check TERM_PROGRAM for Ghostty and other terminals
+	if termProgram == "ghostty" || termProgram == "WezTerm" {
+		return true
+	}
+	
+	return false
+}
+
+// Process and encode artwork for Kitty graphics protocol
+func encodeArtworkForKitty(artworkData []byte) (string, error) {
+	// Decode base64 if needed (from MediaRemote/playerctl)
+	var imageData []byte
+	if decoded, err := base64.StdEncoding.DecodeString(string(artworkData)); err == nil {
+		imageData = decoded
+	} else {
+		// Already raw data
+		imageData = artworkData
+	}
+
+	// Validate we have data
+	if len(imageData) == 0 {
+		return "", fmt.Errorf("empty image data")
+	}
+
+	// Decode image
+	img, _, err := image.Decode(bytes.NewReader(imageData))
+	if err != nil {
+		return "", fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	// Resize maintaining aspect ratio - 180px width, height auto-calculated
+	// This prevents stretching
+	resized := resize.Resize(180, 0, img, resize.Lanczos3)
+
+	// Encode as PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, resized); err != nil {
+		return "", fmt.Errorf("failed to encode PNG: %w", err)
+	}
+
+	// Encode as base64 for Kitty protocol
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	// Kitty protocol needs chunking for large payloads (max 4096 bytes per chunk)
+	const chunkSize = 4096
+	var result strings.Builder
+	
+	// Use a fixed image ID and delete any previous image first
+	const imageID = 42
+	result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID))
+
+	if len(encoded) <= chunkSize {
+		// Small enough to send in one go
+		// Use virtual placement (U=1) to avoid cursor movement issues
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,C=1;%s\033\\", imageID, encoded))
+	} else {
+		// Need to chunk the data
+		for i := 0; i < len(encoded); i += chunkSize {
+			end := i + chunkSize
+			if end > len(encoded) {
+				end = len(encoded)
+			}
+			chunk := encoded[i:end]
+
+			if i == 0 {
+				// First chunk with cursor placement enabled
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,C=1,m=1;%s\033\\", imageID, chunk))
+			} else if end == len(encoded) {
+				// Last chunk - m=0 (no more data)
+				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
+			} else {
+				// Middle chunk - m=1 (more data coming)
+				result.WriteString(fmt.Sprintf("\033_Gm=1;%s\033\\", chunk))
+			}
+		}
+	}
+
+	return result.String(), nil
 }
 
 // Schedule next UI refresh tick
@@ -103,6 +207,33 @@ func (m model) fetchSongData() tea.Cmd {
 			return songDataMsg{err: err}
 		}
 
+		// Fetch artwork if Kitty protocol is supported
+		var artworkEncoded string
+		if m.supportsKitty {
+			// Create track ID for caching
+			trackID := fmt.Sprintf("%s|%s", title, artist)
+			
+			// Only fetch artwork if track changed
+			if trackID != m.lastTrackID {
+				artworkData, err := m.mediaController.GetArtwork()
+				if err == nil && len(artworkData) > 0 {
+					// Wrap encoding in recovery to prevent crashes
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								// Silently ignore artwork encoding panics
+								artworkEncoded = ""
+							}
+						}()
+						encoded, err := encodeArtworkForKitty(artworkData)
+						if err == nil && encoded != "" {
+							artworkEncoded = encoded
+						}
+					}()
+				}
+			}
+		}
+
 		return songDataMsg{
 			title:    title,
 			artist:   artist,
@@ -110,6 +241,7 @@ func (m model) fetchSongData() tea.Cmd {
 			status:   status,
 			duration: duration,
 			position: position,
+			artwork:  artworkEncoded,
 			err:      nil,
 		}
 	}
@@ -187,9 +319,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.lastError = msg.err
 		} else {
-			m.songData.Title = truncateText(msg.title, 30)
-			m.songData.Artist = truncateText(msg.artist, 30)
-			m.songData.Album = truncateText(msg.album, 30)
+			m.songData.Title = truncateText(msg.title, 26)
+			m.songData.Artist = truncateText(msg.artist, 26)
+			m.songData.Album = truncateText(msg.album, 26)
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
 
@@ -199,6 +331,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.duration = msg.duration
 			m.isPlaying = (msg.status == "playing")
 			m.lastError = nil
+
+			// Update artwork if changed
+			if msg.artwork != "" {
+				m.artworkEncoded = msg.artwork
+				m.lastTrackID = fmt.Sprintf("%s|%s", msg.title, msg.artist)
+			}
 		}
 		return m, nil
 	}
@@ -232,14 +370,17 @@ func (m model) View() string {
 	labelStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
 	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 
-	var content strings.Builder
+	var textContent strings.Builder
+	var progressBarContent string
 
 	if m.lastError != nil {
-		content.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
+		textContent.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
 	} else {
+		textContent.WriteString(titleStyle.Render("🎵 Now Playing") + "\n\n")
+		
 		addLine := func(label, value string) {
 			if value != "" {
-				content.WriteString(
+				textContent.WriteString(
 					fmt.Sprintf("%s %s\n",
 						labelStyle.Render(label),
 						value,
@@ -254,24 +395,46 @@ func (m model) View() string {
 		addLine("Status:", m.songData.Status)
 
 		if progress > 0 {
-			// Progress bar with smooth interpolated position
-			barWidth := 32
+			// Progress bar with smooth interpolated position - will be placed below
+			barWidth := 43
 			filled := int(float64(barWidth) * progress)
 			progressBar := highlight.Render(strings.Repeat("█", filled)) +
 				white.Render(strings.Repeat("─", barWidth-filled))
 
-			content.WriteString(fmt.Sprintf(
+			progressBarContent = fmt.Sprintf(
 				"\n%s %s/%s",
 				progressBar,
 				highlight.Render(currentTime),
 				highlight.Render(m.songData.TotalTime),
-			))
+			)
 		}
 	}
 
+	// Combine artwork and text content
+	var topSection string
+	if m.artworkEncoded != "" && m.supportsKitty {
+		// Add padding to the left of text to make room for the image
+		paddedText := lipgloss.NewStyle().
+			PaddingLeft(16).
+			Render(textContent.String())
+		
+		// Place image and padded text together
+		topSection = m.artworkEncoded + paddedText
+	} else {
+		topSection = titleStyle.Render("                Now Playing") + "\n\n" + textContent.String()
+	}
+
+	// Add progress bar below everything
+	var mainContent string
+	if progressBarContent != "" {
+		mainContent = topSection + progressBarContent
+	} else {
+		mainContent = topSection
+	}
+
 	contentStr := borderStyle.
-		Width(50).
-		Render(titleStyle.Render("                Now Playing") + "\n\n" + content.String())
+		Width(60).
+		Render(mainContent)
 
 	helpText := lipgloss.JoinHorizontal(
 		lipgloss.Center,
@@ -296,6 +459,7 @@ func main() {
 	initialModel := model{
 		color:           colorFlag,
 		mediaController: NewMediaController(),
+		supportsKitty:   supportsKittyGraphics() && !noArtworkFlag,
 	}
 
 	if _, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run(); err != nil {

@@ -267,3 +267,43 @@ func (h *HybridController) Control(command string) error {
 	return err
 }
 
+func (h *HybridController) GetArtwork() ([]byte, error) {
+	// Try MediaRemote first if not previously failed
+	if !h.skipMediaRemote {
+		output, err := h.runHelper("artwork")
+		if err == nil && output != "" {
+			// Helper returns base64-encoded data
+			return []byte(output), nil
+		}
+	}
+
+	// Fallback to AppleScript
+	player := h.currentPlayer
+	if player == "" {
+		var err error
+		player, err = h.findActivePlayer()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// AppleScript to get artwork as PNG data
+	script := fmt.Sprintf(`
+		tell application "%s"
+			try
+				set artworkData to raw data of artwork 1 of current track
+				return artworkData
+			on error
+				return ""
+			end try
+		end tell
+	`, player)
+
+	output, err := h.runAppleScript(script)
+	if err != nil || output == "" {
+		return nil, errors.New("no artwork available")
+	}
+
+	return []byte(output), nil
+}
+

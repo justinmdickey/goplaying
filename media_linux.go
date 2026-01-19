@@ -5,8 +5,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -82,4 +86,55 @@ func (p *PlayerctlController) GetPosition() (float64, error) {
 
 func (p *PlayerctlController) Control(command string) error {
 	return exec.Command("playerctl", command).Run()
+}
+
+func (p *PlayerctlController) GetArtwork() ([]byte, error) {
+	// Get artwork URL from playerctl
+	cmd := exec.Command("playerctl", "metadata", "mpris:artUrl")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, errors.New("can't get artwork URL")
+	}
+
+	artUrl := strings.TrimSpace(out.String())
+	if artUrl == "" {
+		return nil, errors.New("no artwork URL")
+	}
+
+	// Handle file:// URLs
+	if strings.HasPrefix(artUrl, "file://") {
+		filePath := strings.TrimPrefix(artUrl, "file://")
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read artwork file: %w", err)
+		}
+		// Return base64-encoded data to match macOS behavior
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return []byte(encoded), nil
+	}
+
+	// Handle http:// and https:// URLs
+	if strings.HasPrefix(artUrl, "http://") || strings.HasPrefix(artUrl, "https://") {
+		resp, err := http.Get(artUrl)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download artwork: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("artwork download failed with status: %d", resp.StatusCode)
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read artwork data: %w", err)
+		}
+
+		// Return base64-encoded data to match macOS behavior
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return []byte(encoded), nil
+	}
+
+	return nil, fmt.Errorf("unsupported artwork URL scheme: %s", artUrl)
 }
