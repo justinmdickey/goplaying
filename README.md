@@ -59,9 +59,29 @@ yay -S goplaying-git
 
 GoPlaying works natively on macOS with Apple Music and Spotify using a hybrid MediaRemote + AppleScript approach.
 
+**For best performance and album artwork support**, build the Swift helper:
+
+```bash
+# Install Xcode Command Line Tools if not already installed
+xcode-select --install
+
+# Build the project with the helper
+make darwin
+```
+
+The `nowplaying` helper enables:
+- Album artwork display in Kitty, Ghostty, and WezTerm terminals
+- Support for any app using macOS Now Playing API (Safari, Chrome, etc.)
+- Faster metadata updates
+
+**Without the helper**, GoPlaying will automatically fall back to AppleScript-only mode which:
+- Works with Apple Music and Spotify
+- May not display album artwork reliably
+- Has slightly slower updates
+
 #### Dependencies
-- Go
-- Swift compiler (included with Xcode or Command Line Tools)
+- Go 1.20+
+- Swift compiler (from Xcode Command Line Tools) - optional but recommended
 
 ### Linux
 

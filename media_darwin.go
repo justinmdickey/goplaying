@@ -277,7 +277,7 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		}
 	}
 
-	// Fallback to AppleScript
+	// Fallback to AppleScript - save artwork to temp file then read it
 	player := h.currentPlayer
 	if player == "" {
 		var err error
@@ -287,23 +287,48 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		}
 	}
 
-	// AppleScript to get artwork as PNG data
+	// Create temp file for artwork
+	tmpFile, err := os.CreateTemp("", "goplaying-artwork-*.png")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath) // Clean up after we're done
+
+	// AppleScript to save artwork to file
 	script := fmt.Sprintf(`
 		tell application "%s"
 			try
 				set artworkData to raw data of artwork 1 of current track
-				return artworkData
-			on error
-				return ""
+				set fileRef to open for access POSIX file "%s" with write permission
+				write artworkData to fileRef
+				close access fileRef
+				return "success"
+			on error errMsg
+				try
+					close access POSIX file "%s"
+				end try
+				error errMsg
 			end try
 		end tell
-	`, player)
+	`, player, tmpPath, tmpPath)
 
 	output, err := h.runAppleScript(script)
-	if err != nil || output == "" {
+	if err != nil || output != "success" {
 		return nil, errors.New("no artwork available")
 	}
 
-	return []byte(output), nil
+	// Read the artwork file
+	artworkData, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read artwork file: %w", err)
+	}
+
+	if len(artworkData) == 0 {
+		return nil, errors.New("artwork file is empty")
+	}
+
+	return artworkData, nil
 }
 
