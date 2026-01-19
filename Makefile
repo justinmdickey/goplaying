@@ -1,10 +1,23 @@
-.PHONY: all clean darwin linux helper
+.PHONY: all clean darwin linux helper fmt lint test
 
 all: goplaying
 
 # Build the main binary
 goplaying:
 	go build -o goplaying
+
+# Format code
+fmt:
+	gofmt -s -w .
+	goimports -w -local goplaying .
+
+# Run linters
+lint:
+	golangci-lint run
+
+# Run tests
+test:
+	go test -v ./...
 
 # Build macOS helper (only on Darwin)
 helper:

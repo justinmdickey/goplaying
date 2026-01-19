@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
 	"os"
@@ -15,16 +16,19 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/EdlinOrg/prominentcolor"
 	"github.com/fsnotify/fsnotify"
 	"github.com/nfnt/resize"
 	"github.com/spf13/viper"
+	_ "golang.org/x/image/webp"
 )
 
 // Config holds all application configuration
 type Config struct {
 	UI struct {
-		Color    string `mapstructure:"color"`
-		MaxWidth int    `mapstructure:"max_width"`
+		Color     string `mapstructure:"color"`
+		ColorMode string `mapstructure:"color_mode"`
+		MaxWidth  int    `mapstructure:"max_width"`
 	} `mapstructure:"ui"`
 	Artwork struct {
 		Enabled bool `mapstructure:"enabled"`
@@ -101,6 +105,7 @@ type songDataMsg struct {
 	duration int64
 	position float64
 	artwork  string // Kitty-encoded artwork
+	color    string // Extracted dominant color
 	err      error
 }
 
@@ -134,7 +139,33 @@ func scrollText(text string, max int, offset int) string {
 	}
 	return string(result)
 }
-
+// Extract dominant color from image and convert to hex
+func extractDominantColor(imgData []byte) (string, error) {
+	// Decode base64 if needed (from MediaRemote/playerctl)
+	var imageData []byte
+	if decoded, err := base64.StdEncoding.DecodeString(string(imgData)); err == nil {
+		imageData = decoded
+	} else {
+		// Already raw data
+		imageData = imgData
+	}
+	
+	img, _, err := image.Decode(bytes.NewReader(imageData))
+	if err != nil {
+		return "", err
+	}
+	
+	// Extract 3 most prominent colors
+	colors, err := prominentcolor.Kmeans(img)
+	if err != nil || len(colors) == 0 {
+		return "", err
+	}
+	
+	// Use the most prominent color
+	c := colors[0]
+	hexColor := fmt.Sprintf("#%02x%02x%02x", c.Color.R, c.Color.G, c.Color.B)
+	return hexColor, nil
+}
 // Check if terminal supports Kitty graphics protocol
 func supportsKittyGraphics() bool {
 	term := os.Getenv("TERM")
@@ -268,14 +299,22 @@ func (m model) fetchSongData() tea.Cmd {
 
 		// Fetch artwork if Kitty protocol is supported
 		var artworkEncoded string
-		if m.supportsKitty {
+		var extractedColor string
+		if m.supportsKitty && config.Artwork.Enabled {
 			// Create track ID for caching
 			trackID := fmt.Sprintf("%s|%s", title, artist)
 			
-			// Only fetch artwork if track changed
-			if trackID != m.lastTrackID {
+			// Only fetch artwork if track changed or first load
+			if trackID != m.lastTrackID || m.lastTrackID == "" {
 				artworkData, err := m.mediaController.GetArtwork()
 				if err == nil && len(artworkData) > 0 {
+					// Extract dominant color if in auto mode
+					if config.UI.ColorMode == "auto" {
+						if color, err := extractDominantColor(artworkData); err == nil && color != "" {
+							extractedColor = color
+						}
+					}
+					
 					// Wrap encoding in recovery to prevent crashes
 					func() {
 						defer func() {
@@ -301,6 +340,7 @@ func (m model) fetchSongData() tea.Cmd {
 			duration: duration,
 			position: position,
 			artwork:  artworkEncoded,
+			color:    extractedColor,
 			err:      nil,
 		}
 	}
@@ -364,7 +404,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case configReloadMsg:
 		// Config file changed, update color and artwork setting
-		m.color = config.UI.Color
+		if config.UI.ColorMode == "manual" {
+			m.color = config.UI.Color
+		}
 		if !config.Artwork.Enabled && m.artworkEncoded != "" {
 			// Delete the image from terminal and clear the encoded data
 			m.artworkEncoded = ""
@@ -437,6 +479,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.songData.Album = msg.album
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
+
+			// Update color if we extracted one in auto mode
+			if config.UI.ColorMode == "auto" && msg.color != "" {
+				m.color = msg.color
+			}
 
 			// Update tracking info for smooth interpolation
 			m.lastPosition = msg.position
@@ -579,6 +626,7 @@ func (m model) View() string {
 func initConfig() {
 	// Set defaults
 	viper.SetDefault("ui.color", "2")
+	viper.SetDefault("ui.color_mode", "manual")
 	viper.SetDefault("ui.max_width", 45)
 	viper.SetDefault("artwork.enabled", true)
 	viper.SetDefault("artwork.padding", 15)
@@ -648,8 +696,14 @@ func main() {
 	flag.Parse()
 	initConfig()
 
+	// Use manual color or default if in auto mode
+	initialColor := config.UI.Color
+	if config.UI.ColorMode == "auto" {
+		initialColor = "7" // Gray until artwork loads
+	}
+
 	initialModel := model{
-		color:           config.UI.Color,
+		color:           initialColor,
 		mediaController: NewMediaController(),
 		supportsKitty:   supportsKittyGraphics() && config.Artwork.Enabled,
 	}

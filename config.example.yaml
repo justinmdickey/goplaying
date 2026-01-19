@@ -1,5 +1,6 @@
 ui:
   color: "2"
+  color_mode: "manual"  # "manual" or "auto" (extract from artwork)
   max_width: 45
 artwork:
   enabled: true
