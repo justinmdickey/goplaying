@@ -470,24 +470,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			trackID := fmt.Sprintf("%s|%s", msg.title, msg.artist)
 			if trackID != m.lastTrackID {
 				m.scrollOffset = 0
-				m.scrollPause = 30  // Pause at start for 3 seconds
+				m.scrollPause = 30 // Pause at start for 3 seconds
 				m.scrollTick = 0
 			}
-			
+
 			m.songData.Title = msg.title
 			m.songData.Artist = msg.artist
 			m.songData.Album = msg.album
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
 
-			// Update color: use extracted color in auto mode, or fall back to manual color
-			if config.UI.ColorMode == "auto" {
-				if msg.color != "" {
-					m.color = msg.color
-				} else {
-					// Fall back to manual color if extraction failed
-					m.color = config.UI.Color
-				}
+			// Update color if we extracted one in auto mode
+			// Don't fall back to manual on every fetch - only when track changes
+			if config.UI.ColorMode == "auto" && msg.color != "" {
+				m.color = msg.color
 			}
 
 			// Update tracking info for smooth interpolation
