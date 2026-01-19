@@ -34,14 +34,12 @@ func NewMediaController() MediaController {
 	// 1. Same directory as the binary
 	helperPath = "./nowplaying"
 	if _, err := os.Stat(helperPath); err == nil {
-		fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 		return &HybridController{helperPath: helperPath}
 	}
 
 	// 2. helpers/nowplaying/ subdirectory
 	helperPath = "./helpers/nowplaying/nowplaying"
 	if _, err := os.Stat(helperPath); err == nil {
-		fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 		return &HybridController{helperPath: helperPath}
 	}
 
@@ -50,13 +48,11 @@ func NewMediaController() MediaController {
 		exeDir := filepath.Dir(exePath)
 		helperPath = filepath.Join(exeDir, "nowplaying")
 		if _, err := os.Stat(helperPath); err == nil {
-			fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 			return &HybridController{helperPath: helperPath}
 		}
 	}
 
 	// If helper not found, return controller anyway - will fallback to AppleScript only
-	fmt.Fprintf(os.Stderr, "Warning: nowplaying helper not found, using AppleScript only (limited to Music/Spotify)\n")
 	return &HybridController{helperPath: ""}
 }
 
@@ -138,7 +134,6 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 			}
 		}
 		// MediaRemote failed - skip it for future calls this session
-		fmt.Fprintf(os.Stderr, "MediaRemote metadata failed: %v, falling back to AppleScript\n", err)
 		h.skipMediaRemote = true
 	}
 
@@ -283,18 +278,10 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 	// Try MediaRemote first if not previously failed
 	if !h.skipMediaRemote {
 		output, err := h.runHelper("artwork")
-		if err != nil {
-			// Log MediaRemote failure details
-			fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch failed: %v\n", err)
-		} else if output == "" {
-			fmt.Fprintf(os.Stderr, "MediaRemote returned empty artwork\n")
-		} else {
-			fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch succeeded, got %d bytes (base64)\n", len(output))
+		if err == nil && output != "" {
 			// Helper returns base64-encoded data
 			return []byte(output), nil
 		}
-	} else {
-		fmt.Fprintf(os.Stderr, "Skipping MediaRemote (previously failed), using AppleScript for artwork\n")
 	}
 
 	// Fallback to AppleScript - save artwork to temp file then read it
@@ -353,7 +340,6 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 	fmt.Fprintf(os.Stderr, "Attempting to fetch artwork via AppleScript from %s\n", player)
 	output, err := h.runAppleScript(script)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "AppleScript artwork fetch error: %v\n", err)
 		return nil, fmt.Errorf("AppleScript error: %w", err)
 	}
 
@@ -363,8 +349,6 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		if artworkURL == "" {
 			return nil, errors.New("no artwork URL available")
 		}
-
-		fmt.Fprintf(os.Stderr, "Spotify artwork URL: %s\n", artworkURL)
 
 		// Download the artwork from the URL
 		resp, err := http.Get(artworkURL)
@@ -382,17 +366,13 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 			return nil, fmt.Errorf("failed to read artwork data: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Downloaded %d bytes of Spotify artwork\n", len(artworkData))
 		return artworkData, nil
 	}
 
 	// For Music.app and others, read from temp file
 	if output != "success" {
-		fmt.Fprintf(os.Stderr, "AppleScript returned unexpected output: %s\n", output)
 		return nil, fmt.Errorf("unexpected AppleScript output: %s", output)
 	}
-
-	fmt.Fprintf(os.Stderr, "AppleScript artwork saved to %s\n", tmpPath)
 
 	// Read the artwork file
 	artworkData, err := os.ReadFile(tmpPath)

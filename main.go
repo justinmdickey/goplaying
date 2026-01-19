@@ -419,13 +419,10 @@ func (m model) fetchSongData() tea.Cmd {
 			if trackID != m.lastTrackID || m.lastTrackID == "" {
 				artworkData, err := m.mediaController.GetArtwork()
 				if err == nil && len(artworkData) > 0 {
-					fmt.Fprintf(os.Stderr, "Got artwork data: %d bytes\n", len(artworkData))
-
 					// Extract dominant color if in auto mode
 					if config.UI.ColorMode == "auto" {
 						if color, err := extractDominantColor(artworkData); err == nil && color != "" {
 							extractedColor = color
-							fmt.Fprintf(os.Stderr, "Extracted color: %s\n", color)
 						}
 					}
 
@@ -434,20 +431,14 @@ func (m model) fetchSongData() tea.Cmd {
 						defer func() {
 							if r := recover(); r != nil {
 								// Silently ignore artwork encoding panics
-								fmt.Fprintf(os.Stderr, "Artwork encoding panicked: %v\n", r)
 								artworkEncoded = ""
 							}
 						}()
 						encoded, err := encodeArtworkForKitty(artworkData)
 						if err == nil && encoded != "" {
 							artworkEncoded = encoded
-							fmt.Fprintf(os.Stderr, "Artwork encoded successfully, %d chars\n", len(encoded))
-						} else if err != nil {
-							fmt.Fprintf(os.Stderr, "Artwork encoding failed: %v\n", err)
 						}
 					}()
-				} else if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to get artwork: %v\n", err)
 				}
 			}
 		}
