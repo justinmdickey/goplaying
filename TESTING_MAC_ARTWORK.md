@@ -3,12 +3,24 @@
 ## Current Issue
 Album artwork is not displaying on macOS even with config set to show it.
 
+## Important Note
+The Swift helper (`nowplaying`) can only be built on macOS. If you see "swiftc: command not found", you're on Linux - you need to build on your Mac.
+
 ## Debug Steps
 
 ### 1. Build and run with debug output
 ```bash
-# On your Mac:
+# On your Mac (not Linux!):
+git pull origin feature/album-artwork
 make darwin  # This builds both the Swift helper and main binary
+
+# If you see "Nothing to be done", force rebuild the helper:
+cd helpers/nowplaying && make clean && make && cd ../..
+
+# Verify helper was built:
+ls -la helpers/nowplaying/nowplaying  # Should show the binary
+
+# Run with debug output:
 ./goplaying 2> /tmp/goplaying_debug.log
 ```
 
