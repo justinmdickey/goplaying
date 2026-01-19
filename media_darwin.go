@@ -337,7 +337,6 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		`, player, tmpPath, tmpPath)
 	}
 
-	fmt.Fprintf(os.Stderr, "Attempting to fetch artwork via AppleScript from %s\n", player)
 	output, err := h.runAppleScript(script)
 	if err != nil {
 		return nil, fmt.Errorf("AppleScript error: %w", err)
