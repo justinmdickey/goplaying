@@ -28,6 +28,7 @@ type Config struct {
 	} `mapstructure:"ui"`
 	Artwork struct {
 		Enabled bool `mapstructure:"enabled"`
+		Padding int  `mapstructure:"padding"`
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
@@ -78,6 +79,11 @@ type model struct {
 	artworkEncoded   string // Kitty protocol-encoded artwork for display
 	supportsKitty    bool   // Whether terminal supports Kitty graphics
 	lastTrackID      string // Track ID for caching artwork (title+artist)
+
+	// Text scrolling state
+	scrollOffset int // Current scroll position for text animation
+	scrollPause  int // Pause counter at start/end of scroll
+	scrollTick   int // Tick counter for slowing scroll speed
 }
 
 // UI refresh tick - fires every 100ms for smooth rendering
@@ -108,11 +114,25 @@ func formatTime(seconds int64) string {
 	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
 }
 
-func truncateText(text string, max int) string {
-	if len(text) > max {
-		return text[:max-3] + "..."
+func scrollText(text string, max int, offset int) string {
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
 	}
-	return text
+	
+	// Add padding for smooth loop
+	fullText := append(runes, []rune("  •  ")...)
+	textLen := len(fullText)
+	
+	// Wrap offset around
+	offset = offset % textLen
+	
+	// Build visible window
+	var result []rune
+	for i := 0; i < max; i++ {
+		result = append(result, fullText[(offset+i)%textLen])
+	}
+	return string(result)
 }
 
 // Check if terminal supports Kitty graphics protocol
@@ -358,7 +378,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, watchConfigCmd()
 
 	case tickMsg:
-		// UI refresh tick - just re-render, no I/O
+		// UI refresh tick - advance scroll animation slowly
+		m.scrollTick++
+		
+		if m.scrollPause > 0 {
+			m.scrollPause--
+		} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (300ms)
+			m.scrollOffset++
+			
+			// Check if we've completed a full loop - pause at the end
+			maxLen := config.Text.MaxLengthWithArt
+			if !m.supportsKitty || !config.Artwork.Enabled {
+				maxLen = config.Text.MaxLengthNoArt
+			}
+			
+			// Calculate the longest text length to determine loop point
+			longestLen := len([]rune(m.songData.Title))
+			if l := len([]rune(m.songData.Artist)); l > longestLen {
+				longestLen = l
+			}
+			if l := len([]rune(m.songData.Album)); l > longestLen {
+				longestLen = l
+			}
+			
+			if longestLen > maxLen {
+				loopPoint := longestLen + 5 // Text length + separator length
+				if m.scrollOffset >= loopPoint {
+					m.scrollOffset = 0
+					m.scrollPause = 30 // Pause for 3 seconds when looping back
+				}
+			}
+		}
 		// Schedule next tick immediately for consistent timing
 		return m, tickCmd()
 
@@ -374,15 +424,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.lastError = msg.err
 		} else {
-			// Use configured text lengths
-			maxLen := config.Text.MaxLengthWithArt
-			if !m.supportsKitty || !config.Artwork.Enabled {
-				maxLen = config.Text.MaxLengthNoArt
+			// Store full text and reset scroll when track changes
+			trackID := fmt.Sprintf("%s|%s", msg.title, msg.artist)
+			if trackID != m.lastTrackID {
+				m.scrollOffset = 0
+				m.scrollPause = 30  // Pause at start for 3 seconds
+				m.scrollTick = 0
 			}
 			
-			m.songData.Title = truncateText(msg.title, maxLen)
-			m.songData.Artist = truncateText(msg.artist, maxLen)
-			m.songData.Album = truncateText(msg.album, maxLen)
+			m.songData.Title = msg.title
+			m.songData.Artist = msg.artist
+			m.songData.Album = msg.album
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
 
@@ -424,10 +476,6 @@ func (m model) View() string {
 		BorderForeground(color).
 		Padding(1, 2)
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(color).
-		Bold(true)
-
 	labelStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
 	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 
@@ -437,7 +485,7 @@ func (m model) View() string {
 	if m.lastError != nil {
 		textContent.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
 	} else {
-		textContent.WriteString(titleStyle.Render("🎵 Now Playing") + "\n\n")
+		textContent.WriteString(highlight.Render("󰓃 Now Playing") + "\n\n")
 		
 		addLine := func(label, value string) {
 			if value != "" {
@@ -450,9 +498,15 @@ func (m model) View() string {
 			}
 		}
 
-		addLine("󰎈 ", m.songData.Title)
-		addLine("󰠃 ", m.songData.Artist)
-		addLine("󰀥 ", m.songData.Album)
+		// Calculate max length for text
+		maxLen := config.Text.MaxLengthWithArt
+		if !m.supportsKitty || !config.Artwork.Enabled {
+			maxLen = config.Text.MaxLengthNoArt
+		}
+
+		addLine("󰎈 ", scrollText(m.songData.Title, maxLen, m.scrollOffset))
+		addLine("󰠃 ", scrollText(m.songData.Artist, maxLen, m.scrollOffset))
+		addLine("󰀥 ", scrollText(m.songData.Album, maxLen, m.scrollOffset))
 		addLine("󰐊 ", m.songData.Status)
 
 		if progress > 0 {
@@ -477,7 +531,7 @@ func (m model) View() string {
 	if m.artworkEncoded != "" && m.supportsKitty && config.Artwork.Enabled {
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
-			PaddingLeft(14).
+			PaddingLeft(config.Artwork.Padding).
 			Render(textContent.String())
 		
 		// Place image and padded text together
@@ -527,6 +581,7 @@ func initConfig() {
 	viper.SetDefault("ui.color", "2")
 	viper.SetDefault("ui.max_width", 45)
 	viper.SetDefault("artwork.enabled", true)
+	viper.SetDefault("artwork.padding", 15)
 	viper.SetDefault("text.max_length_with_art", 22)
 	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)
