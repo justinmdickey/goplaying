@@ -9,13 +9,42 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 	"github.com/nfnt/resize"
+	"github.com/spf13/viper"
 )
+
+// Config holds all application configuration
+type Config struct {
+	UI struct {
+		Color       string `mapstructure:"color"`
+		BorderWidth int    `mapstructure:"border_width"`
+	} `mapstructure:"ui"`
+	Artwork struct {
+		Enabled bool `mapstructure:"enabled"`
+		Size    int  `mapstructure:"size"`
+		Padding int  `mapstructure:"padding"`
+	} `mapstructure:"artwork"`
+	Text struct {
+		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
+		MaxLengthNoArt   int `mapstructure:"max_length_no_art"`
+	} `mapstructure:"text"`
+	Progress struct {
+		BarWidth int `mapstructure:"bar_width"`
+	} `mapstructure:"progress"`
+	Timing struct {
+		UIRefreshMs   int `mapstructure:"ui_refresh_ms"`
+		DataFetchMs   int `mapstructure:"data_fetch_ms"`
+	} `mapstructure:"timing"`
+}
+
+var config Config
 
 var colorFlag string
 var noArtworkFlag bool
@@ -149,8 +178,8 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 	if len(encoded) <= chunkSize {
 		// Small enough to send in one go
 		// Use columns (c) instead of pixels for zoom-independent sizing
-		// c=13 means 13 terminal columns wide, height auto-calculated
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1;%s\033\\", imageID, encoded))
+		// Size from config determines terminal columns wide, height auto-calculated
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, config.Artwork.Size, encoded))
 	} else {
 		// Need to chunk the data
 		for i := 0; i < len(encoded); i += chunkSize {
@@ -162,7 +191,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 			if i == 0 {
 				// First chunk with columns-based sizing
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1,m=1;%s\033\\", imageID, chunk))
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, config.Artwork.Size, chunk))
 			} else if end == len(encoded) {
 				// Last chunk - m=0 (no more data)
 				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
@@ -178,14 +207,14 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 // Schedule next UI refresh tick
 func tickCmd() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(time.Duration(config.Timing.UIRefreshMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
 // Schedule next data fetch
 func fetchCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(time.Duration(config.Timing.DataFetchMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return fetchMsg(t)
 	})
 }
@@ -321,9 +350,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastError = msg.err
 		} else {
 			// Use longer truncation when no artwork is displayed
-			maxLen := 26
+			maxLen := config.Text.MaxLengthWithArt
 			if !m.supportsKitty {
-				maxLen = 35
+				maxLen = config.Text.MaxLengthNoArt
 			}
 			
 			m.songData.Title = truncateText(msg.title, maxLen)
@@ -403,7 +432,7 @@ func (m model) View() string {
 
 		if progress > 0 {
 			// Progress bar with smooth interpolated position - will be placed below
-			barWidth := 43
+			barWidth := config.Progress.BarWidth
 			filled := int(float64(barWidth) * progress)
 			progressBar := highlight.Render(strings.Repeat("█", filled)) +
 				white.Render(strings.Repeat("─", barWidth-filled))
@@ -422,7 +451,7 @@ func (m model) View() string {
 	if m.artworkEncoded != "" && m.supportsKitty {
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
-			PaddingLeft(16).
+			PaddingLeft(config.Artwork.Padding).
 			Render(textContent.String())
 		
 		// Place image and padded text together
@@ -441,7 +470,7 @@ func (m model) View() string {
 	}
 
 	contentStr := borderStyle.
-		Width(60).
+		Width(config.UI.BorderWidth).
 		Render(mainContent)
 
 	helpText := lipgloss.JoinHorizontal(
@@ -461,13 +490,79 @@ func (m model) View() string {
 	)
 }
 
+func initConfig() {
+	// Set defaults
+	viper.SetDefault("ui.color", "2")
+	viper.SetDefault("ui.border_width", 60)
+	viper.SetDefault("artwork.enabled", true)
+	viper.SetDefault("artwork.size", 13)
+	viper.SetDefault("artwork.padding", 16)
+	viper.SetDefault("text.max_length_with_art", 26)
+	viper.SetDefault("text.max_length_no_art", 35)
+	viper.SetDefault("progress.bar_width", 43)
+	viper.SetDefault("timing.ui_refresh_ms", 100)
+	viper.SetDefault("timing.data_fetch_ms", 1000)
+
+	// Set config file location following XDG standard
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	
+	// Check XDG_CONFIG_HOME first, fallback to ~/.config
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			configHome = filepath.Join(homeDir, ".config")
+		}
+	}
+	
+	if configHome != "" {
+		viper.AddConfigPath(filepath.Join(configHome, "goplaying"))
+	}
+
+	// Environment variable support with GOPLAYING_ prefix
+	viper.SetEnvPrefix("GOPLAYING")
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Read config file (ignore error if not found)
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			// Config file found but had errors
+			fmt.Fprintf(os.Stderr, "Warning: Error reading config file: %v\n", err)
+		}
+	}
+
+	// Bind command-line flags (they take precedence)
+	if colorFlag != "2" { // Only override if flag was explicitly set
+		viper.Set("ui.color", colorFlag)
+	}
+	if noArtworkFlag {
+		viper.Set("artwork.enabled", false)
+	}
+
+	// Unmarshal into config struct
+	if err := viper.Unmarshal(&config); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Error parsing config: %v\n", err)
+	}
+
+	// Watch for config file changes and live reload
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		if err := viper.Unmarshal(&config); err == nil {
+			// Config reloaded successfully
+		}
+	})
+	viper.WatchConfig()
+}
+
 func main() {
 	flag.Parse()
+	initConfig()
 
 	initialModel := model{
-		color:           colorFlag,
+		color:           config.UI.Color,
 		mediaController: NewMediaController(),
-		supportsKitty:   supportsKittyGraphics() && !noArtworkFlag,
+		supportsKitty:   supportsKittyGraphics() && config.Artwork.Enabled,
 	}
 
 	if _, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run(); err != nil {

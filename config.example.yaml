@@ -1,0 +1,61 @@
+# GoPlaying Configuration File
+# Place this file at: ~/.config/goplaying/config.yaml
+#
+# All settings are optional. If not specified, defaults will be used.
+# Command-line flags take precedence over config file settings.
+# Environment variables can also be used with GOPLAYING_ prefix.
+#   Example: GOPLAYING_UI_COLOR="#ff0000"
+
+# UI Appearance
+ui:
+  # Accent color for borders, labels, and highlights
+  # Can be ANSI color number (0-255) or hex code (#rrggbb)
+  # Default: "2" (green)
+  color: "2"
+  
+  # Border width in terminal columns
+  # Default: 60
+  border_width: 60
+
+# Album Artwork
+artwork:
+  # Enable or disable album artwork display
+  # Default: true
+  enabled: true
+  
+  # Size of artwork in terminal columns (width)
+  # Height is calculated automatically to maintain aspect ratio
+  # Default: 13
+  size: 13
+  
+  # Left padding in terminal columns for text when artwork is shown
+  # Default: 16
+  padding: 16
+
+# Text Display
+text:
+  # Maximum text length with artwork shown
+  # Default: 26
+  max_length_with_art: 26
+  
+  # Maximum text length without artwork
+  # Default: 35
+  max_length_no_art: 35
+
+# Progress Bar
+progress:
+  # Width of progress bar in characters
+  # Default: 43
+  bar_width: 43
+
+# Performance Timing
+timing:
+  # UI refresh interval in milliseconds (controls progress bar smoothness)
+  # Lower = smoother but more CPU usage
+  # Default: 100
+  ui_refresh_ms: 100
+  
+  # Data fetch interval in milliseconds (how often to poll for new track info)
+  # Lower = more responsive but more CPU/battery usage
+  # Default: 1000
+  data_fetch_ms: 1000
