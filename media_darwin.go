@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,23 +315,39 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 	tmpFile.Close()
 	defer os.Remove(tmpPath) // Clean up after we're done
 
-	// AppleScript to save artwork to file
-	script := fmt.Sprintf(`
-		tell application "%s"
-			try
-				set artworkData to raw data of artwork 1 of current track
-				set fileRef to open for access POSIX file "%s" with write permission
-				write artworkData to fileRef
-				close access fileRef
-				return "success"
-			on error errMsg
+	// Different AppleScript syntax for different players
+	var script string
+	if player == "Spotify" {
+		// Spotify uses artwork_url instead of raw artwork data
+		// We need to download it separately
+		script = fmt.Sprintf(`
+			tell application "Spotify"
 				try
-					close access POSIX file "%s"
+					return artwork url of current track
+				on error errMsg
+					error errMsg
 				end try
-				error errMsg
-			end try
-		end tell
-	`, player, tmpPath, tmpPath)
+			end tell
+		`)
+	} else {
+		// Music.app and other apps use raw data of artwork
+		script = fmt.Sprintf(`
+			tell application "%s"
+				try
+					set artworkData to raw data of artwork 1 of current track
+					set fileRef to open for access POSIX file "%s" with write permission
+					write artworkData to fileRef
+					close access fileRef
+					return "success"
+				on error errMsg
+					try
+						close access POSIX file "%s"
+					end try
+					error errMsg
+				end try
+			end tell
+		`, player, tmpPath, tmpPath)
+	}
 
 	fmt.Fprintf(os.Stderr, "Attempting to fetch artwork via AppleScript from %s\n", player)
 	output, err := h.runAppleScript(script)
@@ -337,6 +355,37 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		fmt.Fprintf(os.Stderr, "AppleScript artwork fetch error: %v\n", err)
 		return nil, fmt.Errorf("AppleScript error: %w", err)
 	}
+
+	// Handle Spotify's URL-based artwork
+	if player == "Spotify" {
+		artworkURL := strings.TrimSpace(output)
+		if artworkURL == "" {
+			return nil, errors.New("no artwork URL available")
+		}
+
+		fmt.Fprintf(os.Stderr, "Spotify artwork URL: %s\n", artworkURL)
+
+		// Download the artwork from the URL
+		resp, err := http.Get(artworkURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download artwork: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("artwork download failed with status: %d", resp.StatusCode)
+		}
+
+		artworkData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read artwork data: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "Downloaded %d bytes of Spotify artwork\n", len(artworkData))
+		return artworkData, nil
+	}
+
+	// For Music.app and others, read from temp file
 	if output != "success" {
 		fmt.Fprintf(os.Stderr, "AppleScript returned unexpected output: %s\n", output)
 		return nil, fmt.Errorf("unexpected AppleScript output: %s", output)
