@@ -23,24 +23,19 @@ import (
 // Config holds all application configuration
 type Config struct {
 	UI struct {
-		Color       string `mapstructure:"color"`
-		BorderWidth int    `mapstructure:"border_width"`
+		Color    string `mapstructure:"color"`
+		MaxWidth int    `mapstructure:"max_width"`
 	} `mapstructure:"ui"`
 	Artwork struct {
 		Enabled bool `mapstructure:"enabled"`
-		Size    int  `mapstructure:"size"`
-		Padding int  `mapstructure:"padding"`
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
 		MaxLengthNoArt   int `mapstructure:"max_length_no_art"`
 	} `mapstructure:"text"`
-	Progress struct {
-		BarWidth int `mapstructure:"bar_width"`
-	} `mapstructure:"progress"`
 	Timing struct {
-		UIRefreshMs   int `mapstructure:"ui_refresh_ms"`
-		DataFetchMs   int `mapstructure:"data_fetch_ms"`
+		UIRefreshMs  int `mapstructure:"ui_refresh_ms"`
+		DataFetchMs int `mapstructure:"data_fetch_ms"`
 	} `mapstructure:"timing"`
 }
 
@@ -102,6 +97,12 @@ type songDataMsg struct {
 	artwork  string // Kitty-encoded artwork
 	err      error
 }
+
+// Config file changed notification
+type configReloadMsg struct{}
+
+// Channel for config change notifications
+var configChangeChan = make(chan struct{}, 1)
 
 func formatTime(seconds int64) string {
 	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
@@ -178,8 +179,8 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 	if len(encoded) <= chunkSize {
 		// Small enough to send in one go
 		// Use columns (c) instead of pixels for zoom-independent sizing
-		// Size from config determines terminal columns wide, height auto-calculated
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, config.Artwork.Size, encoded))
+		// c=13 means 13 terminal columns wide, height auto-calculated
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1;%s\033\\", imageID, encoded))
 	} else {
 		// Need to chunk the data
 		for i := 0; i < len(encoded); i += chunkSize {
@@ -191,7 +192,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 			if i == 0 {
 				// First chunk with columns-based sizing
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, config.Artwork.Size, chunk))
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1,m=1;%s\033\\", imageID, chunk))
 			} else if end == len(encoded) {
 				// Last chunk - m=0 (no more data)
 				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
@@ -217,6 +218,14 @@ func fetchCmd() tea.Cmd {
 	return tea.Tick(time.Duration(config.Timing.DataFetchMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return fetchMsg(t)
 	})
+}
+
+// Watch for config file changes
+func watchConfigCmd() tea.Cmd {
+	return func() tea.Msg {
+		<-configChangeChan
+		return configReloadMsg{}
+	}
 }
 
 // Fetch song data in background (doesn't block UI)
@@ -301,6 +310,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		tickCmd(),
 		fetchCmd(),
+		watchConfigCmd(),
 	)
 }
 
@@ -332,6 +342,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+	case configReloadMsg:
+		// Config file changed, update color and artwork setting
+		m.color = config.UI.Color
+		if !config.Artwork.Enabled && m.artworkEncoded != "" {
+			// Delete the image from terminal and clear the encoded data
+			m.artworkEncoded = ""
+			m.lastTrackID = "" // Clear track ID so artwork can be re-fetched later
+		} else if config.Artwork.Enabled && m.artworkEncoded == "" && m.supportsKitty {
+			// Artwork was just enabled, clear track ID and fetch it for the current song
+			m.lastTrackID = ""
+			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
+		}
+		// Continue watching for more config changes
+		return m, watchConfigCmd()
+
 	case tickMsg:
 		// UI refresh tick - just re-render, no I/O
 		// Schedule next tick immediately for consistent timing
@@ -349,9 +374,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.lastError = msg.err
 		} else {
-			// Use longer truncation when no artwork is displayed
+			// Use configured text lengths
 			maxLen := config.Text.MaxLengthWithArt
-			if !m.supportsKitty {
+			if !m.supportsKitty || !config.Artwork.Enabled {
 				maxLen = config.Text.MaxLengthNoArt
 			}
 			
@@ -425,14 +450,15 @@ func (m model) View() string {
 			}
 		}
 
-		addLine("Title: ", m.songData.Title)
-		addLine("Artist:", m.songData.Artist)
-		addLine("Album: ", m.songData.Album)
-		addLine("Status:", m.songData.Status)
+		addLine("󰎈 ", m.songData.Title)
+		addLine("󰠃 ", m.songData.Artist)
+		addLine("󰀥 ", m.songData.Album)
+		addLine("󰐊 ", m.songData.Status)
 
 		if progress > 0 {
 			// Progress bar with smooth interpolated position - will be placed below
-			barWidth := config.Progress.BarWidth
+			// Bar width calculated from max_width, leaving room for timestamps
+			barWidth := config.UI.MaxWidth - 17
 			filled := int(float64(barWidth) * progress)
 			progressBar := highlight.Render(strings.Repeat("█", filled)) +
 				white.Render(strings.Repeat("─", barWidth-filled))
@@ -448,17 +474,23 @@ func (m model) View() string {
 
 	// Combine artwork and text content
 	var topSection string
-	if m.artworkEncoded != "" && m.supportsKitty {
+	if m.artworkEncoded != "" && m.supportsKitty && config.Artwork.Enabled {
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
-			PaddingLeft(config.Artwork.Padding).
+			PaddingLeft(14).
 			Render(textContent.String())
 		
 		// Place image and padded text together
 		topSection = m.artworkEncoded + paddedText
 	} else {
-		// No artwork - just show the content without extra header
-		topSection = textContent.String()
+		// No artwork - delete any existing image and show content without padding
+		if m.supportsKitty {
+			// Send delete command for the image
+			const imageID = 42
+			topSection = fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID) + textContent.String()
+		} else {
+			topSection = textContent.String()
+		}
 	}
 
 	// Add progress bar below everything
@@ -470,7 +502,7 @@ func (m model) View() string {
 	}
 
 	contentStr := borderStyle.
-		Width(config.UI.BorderWidth).
+		Width(config.UI.MaxWidth).
 		Render(mainContent)
 
 	helpText := lipgloss.JoinHorizontal(
@@ -493,13 +525,10 @@ func (m model) View() string {
 func initConfig() {
 	// Set defaults
 	viper.SetDefault("ui.color", "2")
-	viper.SetDefault("ui.border_width", 60)
+	viper.SetDefault("ui.max_width", 45)
 	viper.SetDefault("artwork.enabled", true)
-	viper.SetDefault("artwork.size", 13)
-	viper.SetDefault("artwork.padding", 16)
-	viper.SetDefault("text.max_length_with_art", 26)
-	viper.SetDefault("text.max_length_no_art", 35)
-	viper.SetDefault("progress.bar_width", 43)
+	viper.SetDefault("text.max_length_with_art", 22)
+	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)
 	viper.SetDefault("timing.data_fetch_ms", 1000)
 
@@ -549,7 +578,12 @@ func initConfig() {
 	// Watch for config file changes and live reload
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		if err := viper.Unmarshal(&config); err == nil {
-			// Config reloaded successfully
+			// Config reloaded successfully, notify the app
+			select {
+			case configChangeChan <- struct{}{}:
+			default:
+				// Channel full, skip notification
+			}
 		}
 	})
 	viper.WatchConfig()
