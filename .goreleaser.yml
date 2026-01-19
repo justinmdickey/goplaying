@@ -67,8 +67,12 @@ brews:
     test: |
       system "#{bin}/goplaying", "--version"
     caveats: |
-      On macOS: Supports Spotify and Apple Music (uses AppleScript)
-      On Linux: Requires playerctl to be installed separately
+      macOS: 
+        - Album artwork works with Spotify and Apple Music via AppleScript
+        - For broader app support (Safari, Chrome, etc.), build the Swift helper with 'make darwin'
+      Linux: 
+        - Requires playerctl to be installed separately
+        - Album artwork works with any MPRIS player that provides artwork
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

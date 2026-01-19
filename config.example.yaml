@@ -1,6 +1,6 @@
 ui:
   color: "2"
-  color_mode: "manual"  # "manual" or "auto" (extract from artwork)
+  color_mode: "manual"  # "manual" (use color above) or "auto" (extract vibrant colors from artwork, optimized for dark backgrounds)
   max_width: 45
 artwork:
   enabled: true
