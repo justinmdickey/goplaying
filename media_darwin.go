@@ -138,6 +138,7 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 			}
 		}
 		// MediaRemote failed - skip it for future calls this session
+		fmt.Fprintf(os.Stderr, "MediaRemote metadata failed: %v, falling back to AppleScript\n", err)
 		h.skipMediaRemote = true
 	}
 
