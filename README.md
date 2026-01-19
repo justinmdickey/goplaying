@@ -4,17 +4,45 @@
 
 ## Description
 
-A simple Now Playing TUI written in Go. See what's currently playing without opening your music app. This cross-platform solution works on both Linux (using playerctl) and macOS (using a hybrid MediaRemote + AppleScript approach) to display currently playing music in your terminal with basic playback controls.
+A beautiful Now Playing TUI written in Go. Display currently playing music with album artwork and auto-extracted colors in your terminal. This cross-platform solution works on both Linux (using playerctl) and macOS (using a hybrid MediaRemote + AppleScript approach) with basic playback controls.
 
 **Supported on macOS:**
-- Apple Music (including Radio streams)
-- Spotify
-- Other apps that implement macOS Now Playing API
+- Apple Music (including Radio streams) with artwork
+- Spotify with artwork
+- Other apps that implement macOS Now Playing API (via MediaRemote helper)
 
 **Supported on Linux:**
-- Any MPRIS-compatible player (via playerctl)
+- Any MPRIS-compatible player (via playerctl) with artwork
 
-![GoPlaying](assets/GoPlaying.jpeg)
+![GoPlaying](assets/GoPlaying.gif)
+
+## Features
+
+- 🎨 **Smart Auto Color Mode** - Automatically extracts vibrant, readable colors from album artwork
+- 🖼️ **Album Artwork Display** - Shows album art in Kitty, Ghostty, and WezTerm terminals
+- ⚡ **Live Configuration Reload** - Changes to config.yaml apply immediately
+- 🎵 **Cross-Platform Support** - Works on Linux (MPRIS) and macOS (AppleScript/MediaRemote)
+- 📱 **Wide Player Support** - Apple Music, Spotify, browsers, and any MPRIS-compatible player
+- 🎹 **Playback Controls** - Play/pause, next, previous track controls
+
+### Auto Color Mode
+
+Set `color_mode: "auto"` in your configuration to automatically extract colors from album artwork:
+- Intelligently selects vibrant, readable colors
+- Filters out too-dark or washed-out colors  
+- Optimized for dark terminal backgrounds
+- Falls back to manual color when no artwork available
+
+**Configuration example** (`~/.config/goplaying/config.yaml`):
+```yaml
+ui:
+  color: "2"
+  color_mode: "auto"  # "manual" or "auto"
+  max_width: 45
+artwork:
+  enabled: true
+  padding: 15
+```
 
 ## Installation
 
@@ -59,9 +87,35 @@ yay -S goplaying-git
 
 GoPlaying works natively on macOS with Apple Music and Spotify using a hybrid MediaRemote + AppleScript approach.
 
+**Album artwork works out of the box** with:
+- ✅ **Spotify** - Downloads artwork via AppleScript
+- ✅ **Apple Music** - Extracts raw artwork data via AppleScript
+- ✅ Displays in Kitty, Ghostty, and WezTerm terminals
+
+**For broader app support** (Safari, Chrome, other Now Playing apps), build the Swift helper:
+
+```bash
+# Install Xcode Command Line Tools if not already installed
+xcode-select --install
+
+# Build the project with the helper
+make darwin
+```
+
+The `nowplaying` helper provides:
+- Support for any app using macOS Now Playing API (Safari, Chrome, etc.)
+- Faster metadata updates via MediaRemote framework
+- Alternative artwork source for additional players
+
+**Without the helper**, GoPlaying automatically uses AppleScript which:
+- ✅ Works perfectly with Apple Music and Spotify
+- ✅ Full album artwork support
+- ✅ Auto color extraction from artwork
+- ⚠️ Limited to Music.app and Spotify (no browser/other app support)
+
 #### Dependencies
-- Go
-- Swift compiler (included with Xcode or Command Line Tools)
+- Go 1.20+
+- Swift compiler (from Xcode Command Line Tools) - optional but recommended
 
 ### Linux
 

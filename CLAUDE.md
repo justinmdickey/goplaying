@@ -1,0 +1,203 @@
+# Claude Code Assistant Guide for goplaying
+
+## Project Overview
+
+**goplaying** is a cross-platform TUI (Terminal User Interface) music player status display written in Go. It shows currently playing music with album artwork, playback controls, and auto-extracted color themes.
+
+- **Platforms**: macOS (MediaRemote + AppleScript), Linux (playerctl/MPRIS)
+- **Frameworks**: Bubble Tea (TUI), Lipgloss (styling)
+- **Special Features**: Kitty graphics protocol for album artwork, K-means color extraction, live config reload
+
+## Key Files
+
+### Core Application
+- **main.go** (718 lines): Main TUI application
+  - Model-view-update pattern with Bubble Tea
+  - `Config` struct with Viper configuration management
+  - `model` struct with song data, artwork, scrolling state
+  - `fetchSongData()`: Background data fetching from media controller
+  - `encodeArtworkForKitty()`: Converts artwork to Kitty graphics protocol
+  - `extractDominantColor()`: K-means color extraction from artwork
+  - `supportsKittyGraphics()`: Terminal capability detection
+
+### Platform-Specific Media Controllers
+- **media_darwin.go**: macOS implementation
+  - `HybridController`: MediaRemote framework (via Swift helper) + AppleScript fallback
+  - Artwork via temp file (AppleScript limitation)
+  - Supports: Music, Spotify, any Now Playing source
+  
+- **media_linux.go**: Linux implementation
+  - Uses `playerctl` command-line tool
+  - MPRIS D-Bus protocol support
+  - Artwork via `mpris:artUrl` metadata
+
+- **media.go**: Interface definition
+  - `MediaController` interface for cross-platform abstraction
+
+### macOS Swift Helper
+- **helpers/nowplaying/main.swift**: MediaRemote private framework wrapper
+  - Returns base64-encoded artwork data
+  - Required for broader app support beyond Music/Spotify
+  - Build with: `cd helpers/nowplaying && make`
+  - Requires: Xcode Command Line Tools (`xcode-select --install`)
+
+### Configuration
+- **config.example.yaml**: Configuration template
+  - `ui.color`: Manual color (ANSI or hex)
+  - `ui.color_mode`: "manual" or "auto" (extract from artwork)
+  - `ui.max_width`: Border width
+  - `artwork.enabled`: Toggle artwork display
+  - `artwork.padding`: Space for artwork (columns)
+  - `text.max_length_with_art` / `text.max_length_no_art`: Scrolling text width
+  - `timing.ui_refresh_ms`: UI tick rate (100ms default)
+  - `timing.data_fetch_ms`: Metadata fetch rate (1000ms default)
+  
+- Config location: `~/.config/goplaying/config.yaml`
+- Live reload: Changes apply immediately via fsnotify
+
+### Build System
+- **Makefile**: Build targets
+  - `make` or `make goplaying`: Build main binary
+  - `make darwin`: Build main + Swift helper (macOS)
+  - `make linux`: Build main binary only
+  - `make fmt`: Run gofmt + goimports
+  - `make lint`: Run golangci-lint
+  - `make test`: Run tests
+  
+- **.golangci.yml**: Linter configuration
+  - Enabled: errcheck, gofmt, goimports, govet, staticcheck, unused, gosimple
+
+## Architecture Patterns
+
+### Data Flow
+1. **Timer loops**: Two concurrent tick loops (UI refresh 100ms, data fetch 1000ms)
+2. **Background fetching**: `fetchSongData()` returns `tea.Cmd` for non-blocking I/O
+3. **Track caching**: Artwork only fetched when track ID (title|artist) changes
+4. **Smooth interpolation**: Position calculated client-side between fetches for fluid progress bar
+
+### Color Modes
+- **Manual**: Uses `config.UI.Color` always
+- **Auto**: 
+  - Extracts dominant color via K-means when track changes
+  - Falls back to manual color on initial load (before artwork)
+  - Persists extracted color until next track (doesn't revert on fetch)
+
+### Artwork Flow
+1. Media controller retrieves artwork (base64 or raw bytes)
+2. `extractDominantColor()`: Decode base64 → image.Decode → prominentcolor.Kmeans
+3. `encodeArtworkForKitty()`: Decode base64 → resize to 300px → PNG encode → base64 → chunk → Kitty protocol
+4. Kitty protocol: Escape sequences with image ID 42, cell-based sizing (c=13 columns)
+
+### Text Scrolling
+- Unicode-aware (rune-based, not byte-based)
+- Scrolls every 3rd tick (300ms) for readability
+- Pauses 30 ticks (3s) at start/end of text
+- Adds " • " separator for smooth looping
+
+## Common Tasks
+
+### Adding Configuration Options
+1. Add field to `Config` struct in main.go with mapstructure tag
+2. Set default in `initConfig()` with `viper.SetDefault()`
+3. Add to config.example.yaml
+4. Access via `config.SectionName.FieldName`
+
+### Platform-Specific Code
+- Use build tags: `//go:build darwin` or `//go:build linux`
+- Implement `MediaController` interface methods
+- Test on both platforms before merging
+
+### Debugging Tips
+- Use `fmt.Fprintf(os.Stderr, "Debug: ...\n")` for logging (doesn't disrupt TUI)
+- Run with `2> debug.log` to capture stderr
+- Check terminal env vars: `echo $TERM $TERM_PROGRAM`
+- Test Kitty protocol manually: `printf '\033_Ga=T,f=100,t=d,i=99;%s\033\\' "$(base64 < image.png)"`
+
+### Before Committing
+```bash
+make fmt    # Format code
+make lint   # Check for issues
+make test   # Run tests
+go build    # Verify compilation
+```
+
+## Known Issues & Gotchas
+
+### macOS Artwork
+- Swift helper must be compiled (`make darwin`)
+- AppleScript fallback uses temp files (raw data doesn't work via osascript stdout)
+- MediaRemote returns base64, AppleScript returns raw bytes (code handles both)
+
+### Terminal Support
+- Kitty graphics: Requires `TERM` containing "kitty" or `TERM_PROGRAM` = "ghostty"/"WezTerm"
+- Not all terminals support graphics protocol
+- Gracefully degrades to text-only mode
+
+### Color Extraction
+- Artwork data is base64-encoded on macOS (MediaRemote/playerctl)
+- Must decode before passing to `image.Decode()`
+- K-means on 300px image balances speed vs accuracy
+- Silent failures return empty string (should fall back to manual color)
+
+### Track Caching
+- Track ID = `title|artist` (not unique for compilations with same artist)
+- Artwork only fetched on track change to avoid redundant processing
+- First load: manual color → switches to auto when artwork loads
+- Color persists for entire track (doesn't revert on subsequent fetches)
+
+## Dependencies
+
+### Go Modules
+- `github.com/charmbracelet/bubbletea` - TUI framework
+- `github.com/charmbracelet/lipgloss` - Terminal styling
+- `github.com/spf13/viper` - Configuration management
+- `github.com/fsnotify/fsnotify` - File watching for live reload
+- `github.com/EdlinOrg/prominentcolor` - K-means color extraction
+- `github.com/nfnt/resize` - Image resizing
+- `golang.org/x/image/webp` - WebP image support
+
+### System Dependencies
+- **macOS**: Swift compiler (optional but recommended)
+- **Linux**: playerctl (`sudo apt install playerctl` or equivalent)
+
+## Testing Strategy
+
+### Manual Testing Checklist
+- [ ] Artwork displays in Kitty/Ghostty/WezTerm
+- [ ] Auto color mode extracts colors and persists per track
+- [ ] Manual color mode uses config color
+- [ ] Config live reload works (edit ~/.config/goplaying/config.yaml)
+- [ ] Text scrolling smooth for long titles
+- [ ] Playback controls work (p/n/b keys)
+- [ ] Works with different players (Music, Spotify, browser on macOS; various MPRIS on Linux)
+- [ ] Graceful degradation without artwork support
+
+### Edge Cases to Consider
+- Empty/missing artwork
+- Very long track names (100+ characters)
+- Rapid track skipping
+- Config file deleted while running
+- Terminal resize during playback
+- No active media player
+
+## Code Style
+
+- Use `gofmt` and `goimports` (run via `make fmt`)
+- Keep functions focused and under 50 lines when possible
+- Document complex logic with comments
+- Platform-specific code in separate files with build tags
+- Error handling: Return errors up, handle at boundaries
+- Prefer lipgloss styles over raw ANSI codes
+
+## Future Enhancement Ideas
+
+- Volume control
+- Playlist view
+- Save favorite tracks
+- Notification support
+- Web remote control
+- Plugin system for data sources
+- Custom key bindings
+- Multiple color extraction algorithms
+- Artwork caching to disk
+- History/stats tracking

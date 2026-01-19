@@ -1,0 +1,31 @@
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: goplaying
+  govet:
+    check-shadowing: true
+  misspell:
+    locale: US
+  errcheck:
+    check-type-assertions: true
+
+linters:
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - typecheck
+    - unused
+    - gosimple
+
+run:
+  timeout: 5m
+  tests: false
+
+issues:
+  exclude-use-default: false

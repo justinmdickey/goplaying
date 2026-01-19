@@ -6,4 +6,5 @@ type MediaController interface {
 	GetDuration() (int64, error)
 	GetPosition() (float64, error)
 	Control(command string) error
+	GetArtwork() ([]byte, error)
 }

@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,11 +18,11 @@ import (
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
 type HybridController struct {
-	helperPath        string
-	currentPlayer     string
-	skipMediaRemote   bool    // Skip MediaRemote if it failed previously for faster fallback
-	cachedDuration    int64   // Cached duration from last metadata call
-	cachedPosition    float64 // Cached position from last metadata call
+	helperPath      string
+	currentPlayer   string
+	skipMediaRemote bool    // Skip MediaRemote if it failed previously for faster fallback
+	cachedDuration  int64   // Cached duration from last metadata call
+	cachedPosition  float64 // Cached position from last metadata call
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -56,9 +58,14 @@ func NewMediaController() MediaController {
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
 	cmd := exec.Command("osascript", "-e", script)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
+		// Include stderr in error for better debugging
+		if errOut.Len() > 0 {
+			return "", fmt.Errorf("%v: %s", err, errOut.String())
+		}
 		return "", err
 	}
 	return strings.TrimSpace(out.String()), nil
@@ -267,3 +274,114 @@ func (h *HybridController) Control(command string) error {
 	return err
 }
 
+func (h *HybridController) GetArtwork() ([]byte, error) {
+	// Try MediaRemote first if not previously failed
+	if !h.skipMediaRemote {
+		output, err := h.runHelper("artwork")
+		if err == nil && output != "" {
+			// Helper returns base64-encoded data
+			return []byte(output), nil
+		}
+	}
+
+	// Fallback to AppleScript - save artwork to temp file then read it
+	player := h.currentPlayer
+	if player == "" {
+		var err error
+		player, err = h.findActivePlayer()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create temp file for artwork
+	tmpFile, err := os.CreateTemp("", "goplaying-artwork-*.png")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath) // Clean up after we're done
+
+	// Different AppleScript syntax for different players
+	var script string
+	if player == "Spotify" {
+		// Spotify uses artwork_url instead of raw artwork data
+		// We need to download it separately
+		script = fmt.Sprintf(`
+			tell application "Spotify"
+				try
+					return artwork url of current track
+				on error errMsg
+					error errMsg
+				end try
+			end tell
+		`)
+	} else {
+		// Music.app and other apps use raw data of artwork
+		script = fmt.Sprintf(`
+			tell application "%s"
+				try
+					set artworkData to raw data of artwork 1 of current track
+					set fileRef to open for access POSIX file "%s" with write permission
+					write artworkData to fileRef
+					close access fileRef
+					return "success"
+				on error errMsg
+					try
+						close access POSIX file "%s"
+					end try
+					error errMsg
+				end try
+			end tell
+		`, player, tmpPath, tmpPath)
+	}
+
+	output, err := h.runAppleScript(script)
+	if err != nil {
+		return nil, fmt.Errorf("AppleScript error: %w", err)
+	}
+
+	// Handle Spotify's URL-based artwork
+	if player == "Spotify" {
+		artworkURL := strings.TrimSpace(output)
+		if artworkURL == "" {
+			return nil, errors.New("no artwork URL available")
+		}
+
+		// Download the artwork from the URL
+		resp, err := http.Get(artworkURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download artwork: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("artwork download failed with status: %d", resp.StatusCode)
+		}
+
+		artworkData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read artwork data: %w", err)
+		}
+
+		return artworkData, nil
+	}
+
+	// For Music.app and others, read from temp file
+	if output != "success" {
+		return nil, fmt.Errorf("unexpected AppleScript output: %s", output)
+	}
+
+	// Read the artwork file
+	artworkData, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read artwork file: %w", err)
+	}
+
+	if len(artworkData) == 0 {
+		return nil, errors.New("artwork file is empty")
+	}
+
+	return artworkData, nil
+}

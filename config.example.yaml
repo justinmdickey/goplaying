@@ -1,0 +1,13 @@
+ui:
+  color: "2"
+  color_mode: "manual"  # "manual" (use color above) or "auto" (extract vibrant colors from artwork, optimized for dark backgrounds)
+  max_width: 45
+artwork:
+  enabled: true
+  padding: 15
+text:
+  max_length_with_art: 22
+  max_length_no_art: 36
+timing:
+  ui_refresh_ms: 100
+  data_fetch_ms: 10000

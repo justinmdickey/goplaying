@@ -151,6 +151,35 @@ func getPosition() {
     }
 }
 
+func getArtwork() {
+    let semaphore = DispatchSemaphore(value: 0)
+
+    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
+        // Try to find artwork data with different key formats
+        for key in info.keys {
+            let keyStr = String(describing: key)
+            if keyStr.contains("Artwork") && !keyStr.contains("Identifier") {
+                if let artworkData = info[key] as? Data {
+                    // Output base64-encoded artwork data
+                    let base64String = artworkData.base64EncodedString()
+                    print(base64String)
+                    semaphore.signal()
+                    return
+                }
+            }
+        }
+        
+        // No artwork found
+        semaphore.signal()
+    }
+
+    // Short timeout for fast fallback
+    let result = semaphore.wait(timeout: .now() + 0.2)
+    if result == .timedOut {
+        fputs("Warning: Timeout getting artwork\n", stderr)
+    }
+}
+
 func sendCommand(_ command: MRCommand) {
     _ = MRMediaRemoteSendCommand(command.rawValue, nil)
     // Brief delay to ensure MediaRemote command is processed before returning.
@@ -163,7 +192,7 @@ func sendCommand(_ command: MRCommand) {
 // Main
 guard CommandLine.arguments.count > 1 else {
     fputs("Usage: nowplaying <command>\n", stderr)
-    fputs("Commands: metadata, duration, position, play-pause, next, previous\n", stderr)
+    fputs("Commands: metadata, duration, position, artwork, play-pause, next, previous\n", stderr)
     exit(1)
 }
 
@@ -176,6 +205,8 @@ case "duration":
     getDuration()
 case "position":
     getPosition()
+case "artwork":
+    getArtwork()
 case "play-pause":
     sendCommand(.togglePlayPause)
 case "next":
