@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/EdlinOrg/prominentcolor"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/EdlinOrg/prominentcolor"
 	"github.com/fsnotify/fsnotify"
 	"github.com/nfnt/resize"
 	"github.com/spf13/viper"
@@ -39,7 +39,7 @@ type Config struct {
 		MaxLengthNoArt   int `mapstructure:"max_length_no_art"`
 	} `mapstructure:"text"`
 	Timing struct {
-		UIRefreshMs  int `mapstructure:"ui_refresh_ms"`
+		UIRefreshMs int `mapstructure:"ui_refresh_ms"`
 		DataFetchMs int `mapstructure:"data_fetch_ms"`
 	} `mapstructure:"timing"`
 }
@@ -80,9 +80,9 @@ type model struct {
 	isPlaying        bool      // Whether song is currently playing
 
 	// Album artwork support
-	artworkEncoded   string // Kitty protocol-encoded artwork for display
-	supportsKitty    bool   // Whether terminal supports Kitty graphics
-	lastTrackID      string // Track ID for caching artwork (title+artist)
+	artworkEncoded string // Kitty protocol-encoded artwork for display
+	supportsKitty  bool   // Whether terminal supports Kitty graphics
+	lastTrackID    string // Track ID for caching artwork (title+artist)
 
 	// Text scrolling state
 	scrollOffset int // Current scroll position for text animation
@@ -124,14 +124,14 @@ func scrollText(text string, max int, offset int) string {
 	if len(runes) <= max {
 		return text
 	}
-	
+
 	// Add padding for smooth loop
 	fullText := append(runes, []rune("  •  ")...)
 	textLen := len(fullText)
-	
+
 	// Wrap offset around
 	offset = offset % textLen
-	
+
 	// Build visible window
 	var result []rune
 	for i := 0; i < max; i++ {
@@ -139,7 +139,9 @@ func scrollText(text string, max int, offset int) string {
 	}
 	return string(result)
 }
+
 // Extract dominant color from image and convert to hex
+// Uses a sampling approach to find vibrant, light colors suitable for dark backgrounds
 func extractDominantColor(imgData []byte) (string, error) {
 	// Decode base64 if needed (from MediaRemote/playerctl)
 	var imageData []byte
@@ -149,38 +151,147 @@ func extractDominantColor(imgData []byte) (string, error) {
 		// Already raw data
 		imageData = imgData
 	}
-	
+
 	img, _, err := image.Decode(bytes.NewReader(imageData))
 	if err != nil {
 		return "", err
 	}
-	
-	// Extract 3 most prominent colors
-	colors, err := prominentcolor.Kmeans(img)
-	if err != nil || len(colors) == 0 {
-		return "", err
+
+	bounds := img.Bounds()
+
+	// Sample colors from the image by taking every Nth pixel
+	// This is much faster than analyzing every pixel
+	colorMap := make(map[uint32]int)
+	sampleRate := 5 // Sample every 5th pixel
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y += sampleRate {
+		for x := bounds.Min.X; x < bounds.Max.X; x += sampleRate {
+			r, g, b, a := img.At(x, y).RGBA()
+
+			// Skip transparent pixels
+			if a < 32768 {
+				continue
+			}
+
+			// Convert from 16-bit to 8-bit color
+			r8 := uint8(r >> 8)
+			g8 := uint8(g >> 8)
+			b8 := uint8(b >> 8)
+
+			// Pack RGB into a single uint32 for counting
+			rgb := (uint32(r8) << 16) | (uint32(g8) << 8) | uint32(b8)
+			colorMap[rgb]++
+		}
 	}
-	
-	// Use the most prominent color
-	c := colors[0]
-	hexColor := fmt.Sprintf("#%02x%02x%02x", c.Color.R, c.Color.G, c.Color.B)
-	return hexColor, nil
+
+	// Find colors that are light and saturated enough for readability
+	type colorScore struct {
+		rgb   uint32
+		count int
+		score float64
+	}
+
+	var candidates []colorScore
+
+	for rgb, count := range colorMap {
+		r := uint8(rgb >> 16)
+		g := uint8(rgb >> 8)
+		b := uint8(rgb)
+
+		// Calculate lightness and saturation
+		rf := float64(r) / 255.0
+		gf := float64(g) / 255.0
+		bf := float64(b) / 255.0
+
+		max := rf
+		if gf > max {
+			max = gf
+		}
+		if bf > max {
+			max = bf
+		}
+
+		min := rf
+		if gf < min {
+			min = gf
+		}
+		if bf < min {
+			min = bf
+		}
+
+		lightness := (max + min) / 2.0
+
+		var saturation float64
+		if max != min {
+			if lightness > 0.5 {
+				saturation = (max - min) / (2.0 - max - min)
+			} else {
+				saturation = (max - min) / (max + min)
+			}
+		}
+
+		// Skip colors that are too dark, too light (near-white), or too unsaturated
+		if lightness < 0.3 || lightness > 0.85 || saturation < 0.25 {
+			continue
+		}
+
+		// Score formula: balance saturation and lightness
+		// Prefer vibrant colors (high saturation) that are reasonably light
+		// Ideal lightness is around 0.5-0.7 (readable but not washed out)
+		lightnessScore := lightness
+		if lightness > 0.7 {
+			// Penalize very light colors
+			lightnessScore = 0.7 - (lightness - 0.7)
+		}
+
+		score := (saturation * 2.5) + (lightnessScore * 1.5) + (float64(count) / 1000.0)
+
+		candidates = append(candidates, colorScore{rgb: rgb, count: count, score: score})
+	}
+
+	if len(candidates) == 0 {
+		// Fallback: try K-means if our sampling didn't find good colors
+		colors, err := prominentcolor.Kmeans(img)
+		if err != nil || len(colors) == 0 {
+			return "", fmt.Errorf("no suitable colors found")
+		}
+		c := colors[0]
+		return fmt.Sprintf("#%02x%02x%02x", c.Color.R, c.Color.G, c.Color.B), nil
+	}
+
+	// Sort by score (highest first)
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].score > candidates[i].score {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
+		}
+	}
+
+	// Use the highest scoring color
+	best := candidates[0]
+	r := uint8(best.rgb >> 16)
+	g := uint8(best.rgb >> 8)
+	b := uint8(best.rgb)
+
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b), nil
 }
+
 // Check if terminal supports Kitty graphics protocol
 func supportsKittyGraphics() bool {
 	term := os.Getenv("TERM")
 	termProgram := os.Getenv("TERM_PROGRAM")
-	
+
 	// Check TERM variable
 	if strings.Contains(term, "kitty") || strings.Contains(term, "konsole") {
 		return true
 	}
-	
+
 	// Check TERM_PROGRAM for Ghostty and other terminals
 	if termProgram == "ghostty" || termProgram == "WezTerm" {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -222,7 +333,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 	// Kitty protocol needs chunking for large payloads (max 4096 bytes per chunk)
 	const chunkSize = 4096
 	var result strings.Builder
-	
+
 	// Use a fixed image ID and delete any previous image first
 	const imageID = 42
 	result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID))
@@ -303,7 +414,7 @@ func (m model) fetchSongData() tea.Cmd {
 		if m.supportsKitty && config.Artwork.Enabled {
 			// Create track ID for caching
 			trackID := fmt.Sprintf("%s|%s", title, artist)
-			
+
 			// Only fetch artwork if track changed or first load
 			if trackID != m.lastTrackID || m.lastTrackID == "" {
 				artworkData, err := m.mediaController.GetArtwork()
@@ -314,7 +425,7 @@ func (m model) fetchSongData() tea.Cmd {
 							extractedColor = color
 						}
 					}
-					
+
 					// Wrap encoding in recovery to prevent crashes
 					func() {
 						defer func() {
@@ -422,18 +533,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// UI refresh tick - advance scroll animation slowly
 		m.scrollTick++
-		
+
 		if m.scrollPause > 0 {
 			m.scrollPause--
 		} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (300ms)
 			m.scrollOffset++
-			
+
 			// Check if we've completed a full loop - pause at the end
 			maxLen := config.Text.MaxLengthWithArt
 			if !m.supportsKitty || !config.Artwork.Enabled {
 				maxLen = config.Text.MaxLengthNoArt
 			}
-			
+
 			// Calculate the longest text length to determine loop point
 			longestLen := len([]rune(m.songData.Title))
 			if l := len([]rune(m.songData.Artist)); l > longestLen {
@@ -442,7 +553,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if l := len([]rune(m.songData.Album)); l > longestLen {
 				longestLen = l
 			}
-			
+
 			if longestLen > maxLen {
 				loopPoint := longestLen + 5 // Text length + separator length
 				if m.scrollOffset >= loopPoint {
@@ -534,7 +645,7 @@ func (m model) View() string {
 		textContent.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
 	} else {
 		textContent.WriteString(highlight.Render("󰓃 Now Playing") + "\n\n")
-		
+
 		addLine := func(label, value string) {
 			if value != "" {
 				textContent.WriteString(
@@ -581,7 +692,7 @@ func (m model) View() string {
 		paddedText := lipgloss.NewStyle().
 			PaddingLeft(config.Artwork.Padding).
 			Render(textContent.String())
-		
+
 		// Place image and padded text together
 		topSection = m.artworkEncoded + paddedText
 	} else {
@@ -639,7 +750,7 @@ func initConfig() {
 	// Set config file location following XDG standard
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	
+
 	// Check XDG_CONFIG_HOME first, fallback to ~/.config
 	configHome := os.Getenv("XDG_CONFIG_HOME")
 	if configHome == "" {
@@ -648,7 +759,7 @@ func initConfig() {
 			configHome = filepath.Join(homeDir, ".config")
 		}
 	}
-	
+
 	if configHome != "" {
 		viper.AddConfigPath(filepath.Join(configHome, "goplaying"))
 	}

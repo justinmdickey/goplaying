@@ -16,11 +16,11 @@ import (
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
 type HybridController struct {
-	helperPath        string
-	currentPlayer     string
-	skipMediaRemote   bool    // Skip MediaRemote if it failed previously for faster fallback
-	cachedDuration    int64   // Cached duration from last metadata call
-	cachedPosition    float64 // Cached position from last metadata call
+	helperPath      string
+	currentPlayer   string
+	skipMediaRemote bool    // Skip MediaRemote if it failed previously for faster fallback
+	cachedDuration  int64   // Cached duration from last metadata call
+	cachedPosition  float64 // Cached position from last metadata call
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -331,4 +331,3 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 
 	return artworkData, nil
 }
-
