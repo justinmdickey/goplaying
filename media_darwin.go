@@ -32,12 +32,14 @@ func NewMediaController() MediaController {
 	// 1. Same directory as the binary
 	helperPath = "./nowplaying"
 	if _, err := os.Stat(helperPath); err == nil {
+		fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 		return &HybridController{helperPath: helperPath}
 	}
 
 	// 2. helpers/nowplaying/ subdirectory
 	helperPath = "./helpers/nowplaying/nowplaying"
 	if _, err := os.Stat(helperPath); err == nil {
+		fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 		return &HybridController{helperPath: helperPath}
 	}
 
@@ -46,11 +48,13 @@ func NewMediaController() MediaController {
 		exeDir := filepath.Dir(exePath)
 		helperPath = filepath.Join(exeDir, "nowplaying")
 		if _, err := os.Stat(helperPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Found nowplaying helper at: %s\n", helperPath)
 			return &HybridController{helperPath: helperPath}
 		}
 	}
 
 	// If helper not found, return controller anyway - will fallback to AppleScript only
+	fmt.Fprintf(os.Stderr, "Warning: nowplaying helper not found, using AppleScript only (limited to Music/Spotify)\n")
 	return &HybridController{helperPath: ""}
 }
 
@@ -275,6 +279,10 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 			// Helper returns base64-encoded data
 			return []byte(output), nil
 		}
+		// Log artwork fetch failure for debugging
+		fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch failed: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "Skipping MediaRemote (previously failed), using AppleScript for artwork\n")
 	}
 
 	// Fallback to AppleScript - save artwork to temp file then read it
@@ -314,10 +322,14 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		end tell
 	`, player, tmpPath, tmpPath)
 
+	fmt.Fprintf(os.Stderr, "Attempting to fetch artwork via AppleScript from %s\n", player)
 	output, err := h.runAppleScript(script)
 	if err != nil || output != "success" {
+		fmt.Fprintf(os.Stderr, "AppleScript artwork fetch failed: %v, output: %s\n", err, output)
 		return nil, errors.New("no artwork available")
 	}
+
+	fmt.Fprintf(os.Stderr, "AppleScript artwork saved to %s\n", tmpPath)
 
 	// Read the artwork file
 	artworkData, err := os.ReadFile(tmpPath)
