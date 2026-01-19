@@ -125,9 +125,9 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 		return "", fmt.Errorf("failed to decode image: %w", err)
 	}
 
-	// Resize maintaining aspect ratio - 180px width, height auto-calculated
-	// This prevents stretching
-	resized := resize.Resize(180, 0, img, resize.Lanczos3)
+	// Resize maintaining aspect ratio - keep it reasonable for terminal display
+	// We'll let Kitty handle the final sizing based on cell dimensions
+	resized := resize.Resize(300, 0, img, resize.Lanczos3)
 
 	// Encode as PNG
 	var buf bytes.Buffer
@@ -148,8 +148,9 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 	if len(encoded) <= chunkSize {
 		// Small enough to send in one go
-		// Use virtual placement (U=1) to avoid cursor movement issues
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,C=1;%s\033\\", imageID, encoded))
+		// Use columns (c) instead of pixels for zoom-independent sizing
+		// c=13 means 13 terminal columns wide, height auto-calculated
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1;%s\033\\", imageID, encoded))
 	} else {
 		// Need to chunk the data
 		for i := 0; i < len(encoded); i += chunkSize {
@@ -160,8 +161,8 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 			chunk := encoded[i:end]
 
 			if i == 0 {
-				// First chunk with cursor placement enabled
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,C=1,m=1;%s\033\\", imageID, chunk))
+				// First chunk with columns-based sizing
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1,m=1;%s\033\\", imageID, chunk))
 			} else if end == len(encoded) {
 				// Last chunk - m=0 (no more data)
 				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
@@ -319,9 +320,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.lastError = msg.err
 		} else {
-			m.songData.Title = truncateText(msg.title, 26)
-			m.songData.Artist = truncateText(msg.artist, 26)
-			m.songData.Album = truncateText(msg.album, 26)
+			// Use longer truncation when no artwork is displayed
+			maxLen := 26
+			if !m.supportsKitty {
+				maxLen = 35
+			}
+			
+			m.songData.Title = truncateText(msg.title, maxLen)
+			m.songData.Artist = truncateText(msg.artist, maxLen)
+			m.songData.Album = truncateText(msg.album, maxLen)
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
 
@@ -421,7 +428,8 @@ func (m model) View() string {
 		// Place image and padded text together
 		topSection = m.artworkEncoded + paddedText
 	} else {
-		topSection = titleStyle.Render("                Now Playing") + "\n\n" + textContent.String()
+		// No artwork - just show the content without extra header
+		topSection = textContent.String()
 	}
 
 	// Add progress bar below everything
