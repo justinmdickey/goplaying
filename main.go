@@ -480,9 +480,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.songData.Status = msg.status
 			m.songData.TotalTime = formatTime(msg.duration)
 
-			// Update color if we extracted one in auto mode
-			if config.UI.ColorMode == "auto" && msg.color != "" {
-				m.color = msg.color
+			// Update color: use extracted color in auto mode, or fall back to manual color
+			if config.UI.ColorMode == "auto" {
+				if msg.color != "" {
+					m.color = msg.color
+				} else {
+					// Fall back to manual color if extraction failed
+					m.color = config.UI.Color
+				}
 			}
 
 			// Update tracking info for smooth interpolation
@@ -696,11 +701,8 @@ func main() {
 	flag.Parse()
 	initConfig()
 
-	// Use manual color or default if in auto mode
+	// Start with manual color, auto mode will override when artwork loads
 	initialColor := config.UI.Color
-	if config.UI.ColorMode == "auto" {
-		initialColor = "7" // Gray until artwork loads
-	}
 
 	initialModel := model{
 		color:           initialColor,
