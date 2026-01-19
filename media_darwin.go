@@ -60,9 +60,14 @@ func NewMediaController() MediaController {
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
 	cmd := exec.Command("osascript", "-e", script)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
+		// Include stderr in error for better debugging
+		if errOut.Len() > 0 {
+			return "", fmt.Errorf("%v: %s", err, errOut.String())
+		}
 		return "", err
 	}
 	return strings.TrimSpace(out.String()), nil
@@ -275,12 +280,16 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 	// Try MediaRemote first if not previously failed
 	if !h.skipMediaRemote {
 		output, err := h.runHelper("artwork")
-		if err == nil && output != "" {
+		if err != nil {
+			// Log MediaRemote failure details
+			fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch failed: %v\n", err)
+		} else if output == "" {
+			fmt.Fprintf(os.Stderr, "MediaRemote returned empty artwork\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch succeeded, got %d bytes (base64)\n", len(output))
 			// Helper returns base64-encoded data
 			return []byte(output), nil
 		}
-		// Log artwork fetch failure for debugging
-		fmt.Fprintf(os.Stderr, "MediaRemote artwork fetch failed: %v\n", err)
 	} else {
 		fmt.Fprintf(os.Stderr, "Skipping MediaRemote (previously failed), using AppleScript for artwork\n")
 	}
@@ -324,9 +333,13 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 
 	fmt.Fprintf(os.Stderr, "Attempting to fetch artwork via AppleScript from %s\n", player)
 	output, err := h.runAppleScript(script)
-	if err != nil || output != "success" {
-		fmt.Fprintf(os.Stderr, "AppleScript artwork fetch failed: %v, output: %s\n", err, output)
-		return nil, errors.New("no artwork available")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "AppleScript artwork fetch error: %v\n", err)
+		return nil, fmt.Errorf("AppleScript error: %w", err)
+	}
+	if output != "success" {
+		fmt.Fprintf(os.Stderr, "AppleScript returned unexpected output: %s\n", output)
+		return nil, fmt.Errorf("unexpected AppleScript output: %s", output)
 	}
 
 	fmt.Fprintf(os.Stderr, "AppleScript artwork saved to %s\n", tmpPath)
