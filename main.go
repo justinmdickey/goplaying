@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/EdlinOrg/prominentcolor"
@@ -46,7 +47,27 @@ type Config struct {
 	} `mapstructure:"timing"`
 }
 
-var config Config
+// SafeConfig wraps Config with thread-safe access
+type SafeConfig struct {
+	mu  sync.RWMutex
+	cfg Config
+}
+
+// Get returns a copy of the current config (thread-safe read)
+func (sc *SafeConfig) Get() Config {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+	return sc.cfg
+}
+
+// Set updates the config (thread-safe write)
+func (sc *SafeConfig) Set(cfg Config) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.cfg = cfg
+}
+
+var config = &SafeConfig{}
 
 var colorFlag string
 var noArtworkFlag bool
@@ -302,6 +323,9 @@ func supportsKittyGraphics() bool {
 
 // Process and encode artwork for Kitty graphics protocol
 func encodeArtworkForKitty(artworkData []byte) (string, error) {
+	// Get config snapshot for this operation
+	cfg := config.Get()
+
 	// Decode base64 if needed (from MediaRemote/playerctl)
 	var imageData []byte
 	if decoded, err := base64.StdEncoding.DecodeString(string(artworkData)); err == nil {
@@ -324,7 +348,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 	// Resize maintaining aspect ratio - keep it reasonable for terminal display
 	// We'll let Kitty handle the final sizing based on cell dimensions
-	resized := resize.Resize(uint(config.Artwork.WidthPixels), 0, img, resize.Lanczos3)
+	resized := resize.Resize(uint(cfg.Artwork.WidthPixels), 0, img, resize.Lanczos3)
 
 	// Encode as PNG
 	var buf bytes.Buffer
@@ -347,7 +371,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 		// Small enough to send in one go
 		// Use columns (c) instead of pixels for zoom-independent sizing
 		// Height is auto-calculated to maintain aspect ratio
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, config.Artwork.WidthColumns, encoded))
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, cfg.Artwork.WidthColumns, encoded))
 	} else {
 		// Need to chunk the data
 		for i := 0; i < len(encoded); i += chunkSize {
@@ -359,7 +383,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 			if i == 0 {
 				// First chunk with columns-based sizing
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, config.Artwork.WidthColumns, chunk))
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, cfg.Artwork.WidthColumns, chunk))
 			} else if end == len(encoded) {
 				// Last chunk - m=0 (no more data)
 				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
@@ -375,14 +399,16 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 // Schedule next UI refresh tick
 func tickCmd() tea.Cmd {
-	return tea.Tick(time.Duration(config.Timing.UIRefreshMs)*time.Millisecond, func(t time.Time) tea.Msg {
+	cfg := config.Get()
+	return tea.Tick(time.Duration(cfg.Timing.UIRefreshMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
 // Schedule next data fetch
 func fetchCmd() tea.Cmd {
-	return tea.Tick(time.Duration(config.Timing.DataFetchMs)*time.Millisecond, func(t time.Time) tea.Msg {
+	cfg := config.Get()
+	return tea.Tick(time.Duration(cfg.Timing.DataFetchMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return fetchMsg(t)
 	})
 }
@@ -398,6 +424,9 @@ func watchConfigCmd() tea.Cmd {
 // Fetch song data in background (doesn't block UI)
 func (m model) fetchSongData() tea.Cmd {
 	return func() tea.Msg {
+		// Get config snapshot at start of fetch
+		cfg := config.Get()
+
 		title, artist, album, status, err := m.mediaController.GetMetadata()
 		if err != nil {
 			return songDataMsg{err: err}
@@ -416,7 +445,7 @@ func (m model) fetchSongData() tea.Cmd {
 		// Fetch artwork if Kitty protocol is supported
 		var artworkEncoded string
 		var extractedColor string
-		if m.supportsKitty && config.Artwork.Enabled {
+		if m.supportsKitty && cfg.Artwork.Enabled {
 			// Create track ID for caching
 			trackID := fmt.Sprintf("%s|%s", title, artist)
 
@@ -425,7 +454,7 @@ func (m model) fetchSongData() tea.Cmd {
 				artworkData, err := m.mediaController.GetArtwork()
 				if err == nil && len(artworkData) > 0 {
 					// Extract dominant color if in auto mode
-					if config.UI.ColorMode == "auto" {
+					if cfg.UI.ColorMode == "auto" {
 						if color, err := extractDominantColor(artworkData); err == nil && color != "" {
 							extractedColor = color
 						}
@@ -457,7 +486,6 @@ func (m model) fetchSongData() tea.Cmd {
 			position: position,
 			artwork:  artworkEncoded,
 			color:    extractedColor,
-			err:      nil,
 		}
 	}
 }
@@ -514,8 +542,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.fetchSongData()
 		case "a":
 			// Toggle artwork on/off
-			config.Artwork.Enabled = !config.Artwork.Enabled
-			if !config.Artwork.Enabled {
+			cfg := config.Get()
+			cfg.Artwork.Enabled = !cfg.Artwork.Enabled
+			config.Set(cfg)
+			if !cfg.Artwork.Enabled {
 				// Clear artwork when disabling
 				m.artworkEncoded = ""
 			} else if m.supportsKitty {
@@ -536,14 +566,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case configReloadMsg:
 		// Config file changed, update color and artwork setting
-		if config.UI.ColorMode == "manual" {
-			m.color = config.UI.Color
+		cfg := config.Get()
+		if cfg.UI.ColorMode == "manual" {
+			m.color = cfg.UI.Color
 		}
-		if !config.Artwork.Enabled && m.artworkEncoded != "" {
+		if !cfg.Artwork.Enabled && m.artworkEncoded != "" {
 			// Delete the image from terminal and clear the encoded data
 			m.artworkEncoded = ""
 			m.lastTrackID = "" // Clear track ID so artwork can be re-fetched later
-		} else if config.Artwork.Enabled && m.artworkEncoded == "" && m.supportsKitty {
+		} else if cfg.Artwork.Enabled && m.artworkEncoded == "" && m.supportsKitty {
 			// Artwork was just enabled, clear track ID and fetch it for the current song
 			m.lastTrackID = ""
 			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
@@ -554,6 +585,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// UI refresh tick - advance scroll animation slowly
 		m.scrollTick++
+		cfg := config.Get()
 
 		if m.scrollPause > 0 {
 			m.scrollPause--
@@ -561,9 +593,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollOffset++
 
 			// Check if we've completed a full loop - pause at the end
-			maxLen := config.Text.MaxLengthWithArt
-			if !m.supportsKitty || !config.Artwork.Enabled {
-				maxLen = config.Text.MaxLengthNoArt
+			maxLen := cfg.Text.MaxLengthWithArt
+			if !m.supportsKitty || !cfg.Artwork.Enabled {
+				maxLen = cfg.Text.MaxLengthNoArt
 			}
 
 			// Calculate the longest text length to determine loop point
@@ -595,6 +627,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case songDataMsg:
 		// Received fresh song data
+		cfg := config.Get()
 		if msg.err != nil {
 			m.lastError = msg.err
 			// Clear artwork when nothing is playing
@@ -617,7 +650,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Update color if we extracted one in auto mode
 			// Don't fall back to manual on every fetch - only when track changes
-			if config.UI.ColorMode == "auto" && msg.color != "" {
+			if cfg.UI.ColorMode == "auto" && msg.color != "" {
 				m.color = msg.color
 			}
 
@@ -641,6 +674,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	// Get config snapshot for rendering
+	cfg := config.Get()
+
 	// Calculate current interpolated position for smooth progress bar
 	currentPos := m.getCurrentPosition()
 	currentTime := formatTime(int64(currentPos))
@@ -698,9 +734,9 @@ func (m model) View() string {
 		}
 
 		// Calculate max length for text
-		maxLen := config.Text.MaxLengthWithArt
-		if !m.supportsKitty || !config.Artwork.Enabled {
-			maxLen = config.Text.MaxLengthNoArt
+		maxLen := cfg.Text.MaxLengthWithArt
+		if !m.supportsKitty || !cfg.Artwork.Enabled {
+			maxLen = cfg.Text.MaxLengthNoArt
 		}
 
 		addLine("󰎈 ", scrollText(m.songData.Title, maxLen, m.scrollOffset))
@@ -720,7 +756,7 @@ func (m model) View() string {
 		if progress > 0 {
 			// Progress bar with smooth interpolated position - will be placed below
 			// Bar width calculated from max_width, leaving room for timestamps
-			barWidth := config.UI.MaxWidth - 17
+			barWidth := cfg.UI.MaxWidth - 17
 			filled := int(float64(barWidth) * progress)
 			progressBar := highlight.Render(strings.Repeat("█", filled)) +
 				white.Render(strings.Repeat("─", barWidth-filled))
@@ -736,10 +772,10 @@ func (m model) View() string {
 
 	// Combine artwork and text content
 	var topSection string
-	if m.artworkEncoded != "" && m.supportsKitty && config.Artwork.Enabled {
+	if m.artworkEncoded != "" && m.supportsKitty && cfg.Artwork.Enabled {
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
-			PaddingLeft(config.Artwork.Padding).
+			PaddingLeft(cfg.Artwork.Padding).
 			Render(textContent.String())
 
 		// Place image and padded text together
@@ -764,14 +800,14 @@ func (m model) View() string {
 	}
 
 	contentStr := borderStyle.
-		Width(config.UI.MaxWidth).
+		Width(cfg.UI.MaxWidth).
 		Render(mainContent)
 
 	// Build help text - either full help or hint to press ?
 	var helpText string
 	if m.showHelp {
 		helpText = lipgloss.NewStyle().
-			Width(config.UI.MaxWidth).
+			Width(cfg.UI.MaxWidth).
 			Align(lipgloss.Center).
 			Render(lipgloss.JoinHorizontal(
 				lipgloss.Center,
@@ -850,13 +886,17 @@ func initConfig() {
 	}
 
 	// Unmarshal into config struct
-	if err := viper.Unmarshal(&config); err != nil {
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Error parsing config: %v\n", err)
 	}
+	config.Set(cfg)
 
 	// Watch for config file changes and live reload
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		if err := viper.Unmarshal(&config); err == nil {
+		var newCfg Config
+		if err := viper.Unmarshal(&newCfg); err == nil {
+			config.Set(newCfg)
 			// Config reloaded successfully, notify the app
 			select {
 			case configChangeChan <- struct{}{}:
@@ -873,12 +913,13 @@ func main() {
 	initConfig()
 
 	// Start with manual color, auto mode will override when artwork loads
-	initialColor := config.UI.Color
+	cfg := config.Get()
+	initialColor := cfg.UI.Color
 
 	initialModel := model{
 		color:           initialColor,
 		mediaController: NewMediaController(),
-		supportsKitty:   supportsKittyGraphics() && config.Artwork.Enabled,
+		supportsKitty:   supportsKittyGraphics() && cfg.Artwork.Enabled,
 	}
 
 	if _, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run(); err != nil {
