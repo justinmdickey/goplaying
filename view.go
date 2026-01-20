@@ -113,6 +113,7 @@ func (m model) View() string {
 			Render(textContent.String())
 
 		// Place image and padded text together
+		// (In vinyl mode, the image itself is rotated and cropped to circle)
 		topSection = m.artworkEncoded + paddedText
 	} else {
 		// No artwork - delete any existing image and show content without padding

@@ -1,0 +1,31 @@
+# Easter Egg Config: Spinning Vinyl Record Mode 🎵
+#
+# This is a hidden feature! Enable vinyl_mode to make the album artwork
+# spin like a real record player when music is playing.
+#
+# The artwork will:
+# - Rotate continuously when music is playing
+# - Stop spinning when paused
+# - Show a "33⅓ RPM" indicator with spinning animation
+#
+# To enable, add this to your ~/.config/goplaying/config.yaml:
+
+ui:
+  color: "2"
+  color_mode: "auto"  # auto looks great with vinyl mode!
+  max_width: 45
+
+artwork:
+  enabled: true
+  padding: 15
+  width_pixels: 300
+  width_columns: 13
+  vinyl_mode: true  # 🎵 Enable spinning vinyl record animation!
+
+text:
+  max_length_with_art: 22
+  max_length_no_art: 36
+
+timing:
+  ui_refresh_ms: 100  # Smooth rotation at 100ms refresh
+  data_fetch_ms: 1000
