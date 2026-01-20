@@ -114,24 +114,27 @@ func (m model) fetchSongData() tea.Cmd {
 			if trackID != m.lastTrackID || m.lastTrackID == "" {
 				artworkData, err := m.mediaController.GetArtwork()
 				if err == nil && len(artworkData) > 0 {
-					// Extract dominant color if in auto mode
-					if cfg.UI.ColorMode == "auto" {
-						if color, err := extractDominantColor(artworkData); err == nil && color != "" {
-							extractedColor = color
-						}
-					}
+					// Determine if we need color extraction
+					shouldExtractColor := cfg.UI.ColorMode == "auto"
 
-					// Wrap encoding in recovery to prevent crashes
+					// Process artwork once (decode, extract color, encode for Kitty)
+					// This is more efficient than decoding twice
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
-								// Silently ignore artwork encoding panics
+								// Silently ignore artwork processing panics
 								artworkEncoded = ""
+								extractedColor = ""
 							}
 						}()
-						encoded, err := encodeArtworkForKitty(artworkData)
-						if err == nil && encoded != "" {
-							artworkEncoded = encoded
+						color, encoded, err := processArtwork(artworkData, shouldExtractColor)
+						if err == nil {
+							if shouldExtractColor && color != "" {
+								extractedColor = color
+							}
+							if encoded != "" {
+								artworkEncoded = encoded
+							}
 						}
 					}()
 				}

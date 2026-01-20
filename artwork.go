@@ -16,21 +16,35 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// Extract dominant color from image and convert to hex
-// Uses a sampling approach to find vibrant, light colors suitable for dark backgrounds
-func extractDominantColor(imgData []byte) (string, error) {
-	// Decode base64 if needed (from MediaRemote/playerctl)
+// decodeArtworkData decodes base64-encoded or raw image data into an image.Image
+// This handles both base64 (from MediaRemote/playerctl) and raw bytes (from AppleScript)
+func decodeArtworkData(imgData []byte) (image.Image, error) {
+	// Try base64 decode first (from MediaRemote/playerctl)
 	var imageData []byte
 	if decoded, err := base64.StdEncoding.DecodeString(string(imgData)); err == nil {
 		imageData = decoded
 	} else {
-		// Already raw data
+		// Already raw data (from AppleScript)
 		imageData = imgData
+	}
+
+	if len(imageData) == 0 {
+		return nil, fmt.Errorf("empty image data")
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(imageData))
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	return img, nil
+}
+
+// Extract dominant color from image and convert to hex
+// Uses a sampling approach to find vibrant, light colors suitable for dark backgrounds
+func extractDominantColor(img image.Image) (string, error) {
+	if img == nil {
+		return "", fmt.Errorf("nil image")
 	}
 
 	bounds := img.Bounds()
@@ -172,29 +186,13 @@ func supportsKittyGraphics() bool {
 }
 
 // Process and encode artwork for Kitty graphics protocol
-func encodeArtworkForKitty(artworkData []byte) (string, error) {
+func encodeArtworkForKitty(img image.Image) (string, error) {
+	if img == nil {
+		return "", fmt.Errorf("nil image")
+	}
+
 	// Get config snapshot for this operation
 	cfg := config.Get()
-
-	// Decode base64 if needed (from MediaRemote/playerctl)
-	var imageData []byte
-	if decoded, err := base64.StdEncoding.DecodeString(string(artworkData)); err == nil {
-		imageData = decoded
-	} else {
-		// Already raw data
-		imageData = artworkData
-	}
-
-	// Validate we have data
-	if len(imageData) == 0 {
-		return "", fmt.Errorf("empty image data")
-	}
-
-	// Decode image
-	img, _, err := image.Decode(bytes.NewReader(imageData))
-	if err != nil {
-		return "", fmt.Errorf("failed to decode image: %w", err)
-	}
 
 	// Resize maintaining aspect ratio - keep it reasonable for terminal display
 	// We'll let Kitty handle the final sizing based on cell dimensions
@@ -245,4 +243,29 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 	}
 
 	return result.String(), nil
+}
+
+// processArtwork decodes artwork data once and returns both the extracted color and Kitty-encoded string
+// This is more efficient than calling extractDominantColor and encodeArtworkForKitty separately,
+// as it avoids decoding the image twice
+func processArtwork(artworkData []byte, extractColor bool) (color string, encoded string, err error) {
+	// Decode the image once
+	img, err := decodeArtworkData(artworkData)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Extract color if requested
+	if extractColor {
+		if c, err := extractDominantColor(img); err == nil && c != "" {
+			color = c
+		}
+	}
+
+	// Encode for Kitty protocol
+	if enc, err := encodeArtworkForKitty(img); err == nil && enc != "" {
+		encoded = enc
+	}
+
+	return color, encoded, nil
 }

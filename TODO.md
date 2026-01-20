@@ -52,10 +52,11 @@ This document tracks planned improvements, features, and known issues for goplay
   - Files: `main.go` (39 lines) + 5 new modular files
   - **Completed**: PR #33 merged, 95% reduction in main.go size
 
-- [ ] **Fix redundant image decoding** - Artwork decoded twice (color + Kitty encoding) (Effort: S, Impact: High)
+- [x] **Fix redundant image decoding** - Artwork decoded twice (color + Kitty encoding) (Effort: S, Impact: High) ✅
   - Decode once, pass `image.Image` to both functions
   - 50% reduction in image processing time on track changes
-  - Files: `artwork.go`
+  - Files: `artwork.go`, `model.go`
+  - **Completed**: Created `decodeArtworkData()` helper and `processArtwork()` convenience function
 
 - [ ] **Replace bubble sort with sort.Slice()** - Color candidate sorting uses O(n²) algorithm (Effort: S, Impact: Low)
   - 2-line fix: use `sort.Slice()` from stdlib
