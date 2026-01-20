@@ -121,6 +121,175 @@ make test   # Run tests
 go build    # Verify compilation
 ```
 
+## Release Process
+
+### Overview
+The project uses automated releases via GitHub Actions + GoReleaser. Pushing a version tag triggers builds for all platforms and updates distribution channels.
+
+### Version Numbering
+- **Format**: `v0.MINOR.PATCH` (0-based versioning during development)
+- **Examples**: v0.2.0, v0.2.1, v0.2.2
+- **When to bump**:
+  - MINOR: New features, significant changes
+  - PATCH: Bug fixes, small improvements
+
+### Release Workflow
+
+#### 1. Verify Changes are Ready
+```bash
+# Check recent commits
+git log --oneline -5
+
+# Verify clean working tree
+git status
+
+# Ensure main branch is up to date
+git pull origin main
+```
+
+#### 2. Create and Push Release Tag
+```bash
+# Create annotated tag with release notes
+git tag -a v0.2.X -m "Release v0.2.X - Brief description
+
+New features:
+- Feature description
+
+Bug fixes:
+- Fix description
+
+UX improvements:
+- Improvement description"
+
+# Push tag to trigger GitHub Actions
+git push origin v0.2.X
+```
+
+#### 3. Monitor GitHub Actions Build
+```bash
+# Watch the workflow
+gh run list --limit 1
+gh run watch <run-id>
+
+# Or check on GitHub
+# https://github.com/justinmdickey/goplaying/actions
+```
+
+**Expected results**:
+- Build completes in ~1m20s
+- All platform binaries created (Linux/macOS, x86_64/arm64)
+- GitHub Release published with assets
+- Homebrew formula auto-updated
+
+#### 4. Verify Release
+```bash
+# Check release was created
+gh release view v0.2.X
+
+# Verify Homebrew formula updated
+gh api repos/justinmdickey/homebrew-tap/contents/Formula/goplaying.rb | jq -r '.content' | base64 -d | head -10
+```
+
+#### 5. Update AUR Package (goplaying-git)
+
+**Get version info**:
+```bash
+# In main repo
+git rev-list --count HEAD  # Get commit count (e.g., 84)
+git rev-parse --short HEAD # Get short hash (e.g., 645ec14)
+```
+
+**Update AUR package**:
+```bash
+cd ~/Dev/aur/goplaying-git
+
+# Edit PKGBUILD - update pkgver line
+# pkgver=r84.645ec14
+
+# Regenerate .SRCINFO
+makepkg --printsrcinfo > .SRCINFO
+
+# Verify
+cat .SRCINFO | head -5
+
+# Commit and push to AUR
+git add PKGBUILD .SRCINFO
+git commit -m "Update to r84.645ec14 - Brief description"
+git push origin master
+```
+
+**Note**: AUR updates appear within 1-2 minutes. Users see updates via `yay -Syu`.
+
+### Distribution Channels
+
+#### Homebrew (Auto-updated)
+- **Tap**: `justinmdickey/tap/goplaying`
+- **Formula**: Auto-updated by GoReleaser on tag push
+- **Users install**: `brew install justinmdickey/tap/goplaying`
+- **Users upgrade**: `brew upgrade goplaying`
+
+#### AUR (Manual update)
+- **Package**: `goplaying-git` (VCS package, tracks git HEAD)
+- **Maintainer**: justinmdickey
+- **Update**: Manual PKGBUILD version bump + push
+- **Users install**: `yay -S goplaying-git`
+- **Users upgrade**: `yay -Syu`
+
+#### GitHub Releases (Auto)
+- **Assets**: Binaries for Linux/macOS (x86_64/arm64)
+- **Format**: `.tar.gz` and `.zip` archives
+- **Checksums**: `checksums.txt` included
+- **Created by**: GoReleaser via GitHub Actions
+
+### Release Checklist
+
+Before tagging a release:
+- [ ] All changes committed and pushed to main
+- [ ] Code formatted (`make fmt`)
+- [ ] Tests passing (`make test`)
+- [ ] README updated if needed
+- [ ] Version number decided (MINOR vs PATCH)
+
+After tagging:
+- [ ] GitHub Actions workflow completes successfully
+- [ ] GitHub Release created with all assets
+- [ ] Homebrew formula shows new version
+- [ ] AUR package updated and pushed
+- [ ] Test install from at least one channel
+
+### Common Release Commands
+
+```bash
+# Quick release flow
+git tag -a v0.2.X -m "Release notes" && git push origin v0.2.X
+gh run watch $(gh run list --limit 1 --json databaseId -q '.[0].databaseId')
+
+# Update AUR
+cd ~/Dev/aur/goplaying-git
+# Update pkgver in PKGBUILD
+makepkg --printsrcinfo > .SRCINFO
+git add PKGBUILD .SRCINFO && git commit -m "Update to rXX.XXXXXXX" && git push origin master
+
+# Check versions
+gh release view v0.2.X
+yay -Si goplaying-git  # Check AUR
+```
+
+### Troubleshooting
+
+**GitHub Actions fails**:
+- Check workflow logs: `gh run view <run-id>`
+- Common issues: GoReleaser config syntax, missing secrets
+
+**Homebrew not updating**:
+- Check GoReleaser config: `.goreleaser.yml`
+- Verify tap repo: `justinmdickey/homebrew-tap`
+
+**AUR update not showing**:
+- AUR API cache refreshes in 1-2 minutes
+- Verify push succeeded: `cd ~/Dev/aur/goplaying-git && git log -1`
+- Check AUR web: https://aur.archlinux.org/packages/goplaying-git
+
 ## Known Issues & Gotchas
 
 ### macOS Artwork
@@ -168,7 +337,11 @@ go build    # Verify compilation
 - [ ] Manual color mode uses config color
 - [ ] Config live reload works (edit ~/.config/goplaying/config.yaml)
 - [ ] Text scrolling smooth for long titles
-- [ ] Playback controls work (p/n/b keys)
+- [ ] Playback controls work (p/n/b/a/? keys)
+- [ ] Artwork toggle (a key) works
+- [ ] Help toggle (? key) shows/hides keybinds
+- [ ] Dynamic status icons change (play/pause/stop)
+- [ ] "Nothing playing" state shows friendly message
 - [ ] Works with different players (Music, Spotify, browser on macOS; various MPRIS on Linux)
 - [ ] Graceful degradation without artwork support
 
