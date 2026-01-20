@@ -287,9 +287,9 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 		// Crop to circle first
 		processedImg = cropToCircle(processedImg)
 
-		// Rotate based on angle (0-7 maps to 0-315 degrees in 45° increments)
+		// Rotate based on angle (0-89 maps to 0-356 degrees in 4° increments)
 		if rotationAngle > 0 {
-			angleDegrees := float64(rotationAngle) * 45.0
+			angleDegrees := float64(rotationAngle) * 4.0
 			processedImg = rotateImage(processedImg, angleDegrees)
 		}
 	}
@@ -307,9 +307,13 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 	const chunkSize = 4096
 	var result strings.Builder
 
-	// Use a fixed image ID and delete any previous image first
+	// Use a fixed image ID - in vinyl mode, DON'T delete to avoid flashing
 	const imageID = 42
-	result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID))
+
+	// Skip delete in vinyl mode - just overwrite the image in place for smooth animation
+	if !cfg.Artwork.VinylMode {
+		result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID))
+	}
 
 	if len(encoded) <= chunkSize {
 		// Small enough to send in one go

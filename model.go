@@ -41,7 +41,10 @@ type model struct {
 	rawArtworkData []byte // Raw artwork data for vinyl rotation re-encoding
 
 	// Vinyl record animation (easter egg)
-	vinylRotation int // Current rotation angle (0-7) for spinning record effect
+	vinylRotation     int      // Current rotation angle (0-89) for spinning record effect
+	vinylFrameCache   []string // Pre-rendered vinyl frames for smooth playback (90 frames)
+	vinylCacheTrackID string   // Track ID for which frames are cached
+	vinylAccumulator  float64  // Fractional frame accumulator for smooth rotation at any RPM
 
 	// Text scrolling state
 	scrollOffset int // Current scroll position for text animation
@@ -72,6 +75,12 @@ type songDataMsg struct {
 	err        error
 }
 
+// Result of generating vinyl frames in background
+type vinylFramesMsg struct {
+	frames  []string // Pre-rendered vinyl frames (45 frames)
+	trackID string   // Track ID these frames belong to
+}
+
 // Schedule next UI refresh tick
 func tickCmd() tea.Cmd {
 	cfg := config.Get()
@@ -86,6 +95,22 @@ func fetchCmd() tea.Cmd {
 	return tea.Tick(time.Duration(cfg.Timing.DataFetchMs)*time.Millisecond, func(t time.Time) tea.Msg {
 		return fetchMsg(t)
 	})
+}
+
+// Generate vinyl frames in background (doesn't block UI)
+func generateVinylFramesCmd(rawArtwork []byte, trackID string) tea.Cmd {
+	return func() tea.Msg {
+		frames := make([]string, 90)
+		for i := 0; i < 90; i++ {
+			if _, encoded, err := processArtwork(rawArtwork, false, i); err == nil {
+				frames[i] = encoded
+			}
+		}
+		return vinylFramesMsg{
+			frames:  frames,
+			trackID: trackID,
+		}
+	}
 }
 
 // Fetch song data in background (doesn't block UI)
@@ -247,6 +272,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cfg.UI.ColorMode == "manual" {
 			m.color = cfg.UI.Color
 		}
+
+		// If vinyl mode was disabled, clear cache and reload normal artwork
+		if !cfg.Artwork.VinylMode && len(m.vinylFrameCache) > 0 {
+			m.vinylFrameCache = nil
+			m.vinylCacheTrackID = ""
+			m.lastTrackID = "" // Force artwork reload
+			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
+		}
+
+		// If vinyl mode was enabled, generate frames
+		if cfg.Artwork.VinylMode && len(m.vinylFrameCache) == 0 && len(m.rawArtworkData) > 0 && m.lastTrackID != "" {
+			m.vinylCacheTrackID = ""
+			return m, tea.Batch(watchConfigCmd(), generateVinylFramesCmd(m.rawArtworkData, m.lastTrackID))
+		}
+
 		if !cfg.Artwork.Enabled && m.artworkEncoded != "" {
 			// Delete the image from terminal and clear the encoded data
 			m.artworkEncoded = ""
@@ -265,13 +305,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cfg := config.Get()
 
 		// Vinyl mode: rotate artwork when playing
-		if cfg.Artwork.VinylMode && m.isPlaying && len(m.rawArtworkData) > 0 {
-			m.vinylRotation = (m.vinylRotation + 1) % 8 // 8 rotation frames
+		// Uses pre-cached frames for near-zero CPU overhead during playback
+		// Speed is configurable via vinyl_rpm (e.g., 33.33 for classic vinyl, 45 for 7" singles)
+		if cfg.Artwork.VinylMode && m.isPlaying && len(m.vinylFrameCache) == 90 {
+			// Calculate how many frames to advance per tick based on RPM
+			// Formula: frames_per_second = RPM / 60 * 90 frames
+			//          frames_per_tick = frames_per_second * 0.1 seconds_per_tick
+			framesPerSecond := cfg.Artwork.VinylRPM / 60.0 * 90.0
+			framesPerTick := framesPerSecond * 0.1
 
-			// Re-encode artwork with new rotation angle
-			// This is expensive but necessary for smooth animation
-			if _, encoded, err := processArtwork(m.rawArtworkData, false, m.vinylRotation); err == nil && encoded != "" {
-				m.artworkEncoded = encoded
+			// Accumulate fractional frames
+			m.vinylAccumulator += framesPerTick
+
+			// Advance whole frames when accumulator >= 1
+			for m.vinylAccumulator >= 1.0 {
+				m.vinylRotation = (m.vinylRotation + 1) % 90
+				m.vinylAccumulator -= 1.0
+
+				// Use pre-cached frame - no expensive re-encoding!
+				m.artworkEncoded = m.vinylFrameCache[m.vinylRotation]
 			}
 		}
 
@@ -328,6 +380,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset = 0
 				m.scrollPause = 30 // Pause at start for 3 seconds
 				m.scrollTick = 0
+
+				// Clear vinyl cache immediately so old artwork doesn't keep spinning
+				m.vinylFrameCache = nil
+				m.vinylCacheTrackID = ""
 			}
 
 			m.songData.Title = msg.title
@@ -350,15 +406,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastError = nil
 
 			// Update artwork if changed
+			// trackID already declared above on line 329
 			if msg.artwork != "" {
 				m.artworkEncoded = msg.artwork
-				m.lastTrackID = fmt.Sprintf("%s|%s", msg.title, msg.artist)
+				m.lastTrackID = trackID
 			}
 
 			// Store raw artwork data for vinyl mode re-encoding
 			if len(msg.rawArtwork) > 0 {
 				m.rawArtworkData = msg.rawArtwork
+
+				// Pre-generate all 45 vinyl frames if vinyl mode enabled and track changed
+				// Generate in background to avoid blocking the UI
+				if cfg.Artwork.VinylMode && trackID != m.vinylCacheTrackID {
+					m.vinylCacheTrackID = trackID
+					return m, generateVinylFramesCmd(msg.rawArtwork, trackID)
+				}
 			}
+		}
+		return m, nil
+
+	case vinylFramesMsg:
+		// Vinyl frames generated in background - store them if still relevant
+		if msg.trackID == m.vinylCacheTrackID {
+			m.vinylFrameCache = msg.frames
 		}
 		return m, nil
 	}

@@ -132,6 +132,8 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 15
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -151,6 +153,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 5
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -170,6 +173,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 15
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -189,6 +193,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 15
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -208,6 +213,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 50
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -227,6 +233,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = -5
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -246,6 +253,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 15
 		cfg.Artwork.WidthPixels = 0
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100
@@ -265,6 +273,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.Padding = 15
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
+		cfg.Artwork.VinylRPM = 33.33
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 5
@@ -320,11 +329,11 @@ func TestApplyDefaultsForInvalidFields(t *testing.T) {
 	if cfg.UI.Color != "2" {
 		t.Errorf("Expected color default '2', got '%s'", cfg.UI.Color)
 	}
-	if cfg.UI.ColorMode != "manual" {
-		t.Errorf("Expected color_mode default 'manual', got '%s'", cfg.UI.ColorMode)
+	if cfg.UI.ColorMode != "auto" {
+		t.Errorf("Expected color_mode default 'auto', got '%s'", cfg.UI.ColorMode)
 	}
-	if cfg.Artwork.Padding != 15 {
-		t.Errorf("Expected padding default 15, got %d", cfg.Artwork.Padding)
+	if cfg.Artwork.Padding != 16 {
+		t.Errorf("Expected padding default 16, got %d", cfg.Artwork.Padding)
 	}
 	if cfg.Artwork.WidthPixels != 300 {
 		t.Errorf("Expected width_pixels default 300, got %d", cfg.Artwork.WidthPixels)
@@ -361,6 +370,7 @@ func TestValidationIntegration(t *testing.T) {
 	cfg.Artwork.Padding = -5
 	cfg.Artwork.WidthPixels = 0
 	cfg.Artwork.WidthColumns = 13
+	cfg.Artwork.VinylRPM = 33.33
 	cfg.Text.MaxLengthWithArt = 0
 	cfg.Text.MaxLengthNoArt = 300
 	cfg.Timing.UIRefreshMs = 5
@@ -391,14 +401,14 @@ func TestValidationIntegration(t *testing.T) {
 	if cfg.UI.Color != "2" {
 		t.Errorf("Expected color default '2', got '%s'", cfg.UI.Color)
 	}
-	if cfg.UI.ColorMode != "manual" {
-		t.Errorf("Expected color_mode default 'manual', got '%s'", cfg.UI.ColorMode)
+	if cfg.UI.ColorMode != "auto" {
+		t.Errorf("Expected color_mode default 'auto', got '%s'", cfg.UI.ColorMode)
 	}
 	if cfg.UI.MaxWidth != 45 {
 		t.Errorf("Expected max_width default 45, got %d", cfg.UI.MaxWidth)
 	}
-	if cfg.Artwork.Padding != 15 {
-		t.Errorf("Expected padding default 15, got %d", cfg.Artwork.Padding)
+	if cfg.Artwork.Padding != 16 {
+		t.Errorf("Expected padding default 16, got %d", cfg.Artwork.Padding)
 	}
 	if cfg.Artwork.WidthPixels != 300 {
 		t.Errorf("Expected width_pixels default 300, got %d", cfg.Artwork.WidthPixels)

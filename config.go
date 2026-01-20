@@ -21,11 +21,12 @@ type Config struct {
 		MaxWidth  int    `mapstructure:"max_width"`
 	} `mapstructure:"ui"`
 	Artwork struct {
-		Enabled      bool `mapstructure:"enabled"`
-		Padding      int  `mapstructure:"padding"`
-		WidthPixels  int  `mapstructure:"width_pixels"`
-		WidthColumns int  `mapstructure:"width_columns"`
-		VinylMode    bool `mapstructure:"vinyl_mode"` // Easter egg: spinning vinyl record animation
+		Enabled      bool    `mapstructure:"enabled"`
+		Padding      int     `mapstructure:"padding"`
+		WidthPixels  int     `mapstructure:"width_pixels"`
+		WidthColumns int     `mapstructure:"width_columns"`
+		VinylMode    bool    `mapstructure:"vinyl_mode"` // Easter egg: spinning vinyl record animation
+		VinylRPM     float64 `mapstructure:"vinyl_rpm"`  // Rotation speed in RPM (revolutions per minute)
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
@@ -158,6 +159,13 @@ func validateConfig(cfg *Config) []error {
 		})
 	}
 
+	if cfg.Artwork.VinylRPM <= 0 || cfg.Artwork.VinylRPM > 1000 {
+		errors = append(errors, configError{
+			field:   "artwork.vinyl_rpm",
+			message: fmt.Sprintf("must be > 0 and <= 1000 (got %.2f)", cfg.Artwork.VinylRPM),
+		})
+	}
+
 	// Text validation
 	if cfg.Text.MaxLengthWithArt <= 0 || cfg.Text.MaxLengthWithArt > 200 {
 		errors = append(errors, configError{
@@ -203,15 +211,17 @@ func applyDefaultsForInvalidFields(cfg *Config, errors []error) {
 		case "ui.max_width":
 			cfg.UI.MaxWidth = 45
 		case "ui.color_mode":
-			cfg.UI.ColorMode = "manual"
+			cfg.UI.ColorMode = "auto"
 		case "ui.color":
 			cfg.UI.Color = "2"
 		case "artwork.padding":
-			cfg.Artwork.Padding = 15
+			cfg.Artwork.Padding = 16
 		case "artwork.width_pixels":
 			cfg.Artwork.WidthPixels = 300
 		case "artwork.width_columns":
-			cfg.Artwork.WidthColumns = 13
+			cfg.Artwork.WidthColumns = 14
+		case "artwork.vinyl_rpm":
+			cfg.Artwork.VinylRPM = 10.0
 		case "text.max_length_with_art":
 			cfg.Text.MaxLengthWithArt = 22
 		case "text.max_length_no_art":
@@ -254,13 +264,14 @@ func watchConfigCmd() tea.Cmd {
 func initConfig() {
 	// Set defaults
 	viper.SetDefault("ui.color", "2")
-	viper.SetDefault("ui.color_mode", "manual")
+	viper.SetDefault("ui.color_mode", "auto")
 	viper.SetDefault("ui.max_width", 45)
 	viper.SetDefault("artwork.enabled", true)
-	viper.SetDefault("artwork.padding", 15)
+	viper.SetDefault("artwork.padding", 16)
 	viper.SetDefault("artwork.width_pixels", 300)
-	viper.SetDefault("artwork.width_columns", 13)
-	viper.SetDefault("artwork.vinyl_mode", false) // Easter egg - not in example config
+	viper.SetDefault("artwork.width_columns", 14)
+	viper.SetDefault("artwork.vinyl_mode", false) // Disabled by default - see config.example.yaml
+	viper.SetDefault("artwork.vinyl_rpm", 10.0)   // Slow, dramatic spin when enabled
 	viper.SetDefault("text.max_length_with_art", 22)
 	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)
