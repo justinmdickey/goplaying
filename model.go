@@ -412,14 +412,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if longestLen > maxLen {
 			if m.scrollPause > 0 {
 				m.scrollPause--
-			} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (~300ms or ~1.5s when paused)
+			} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (interval depends on adaptive tick rate)
 				m.scrollOffset++
 
 				// Check if we've completed a full loop - pause at the end
 				loopPoint := longestLen + 5 // Text length + separator length
 				if m.scrollOffset >= loopPoint {
 					m.scrollOffset = 0
-					m.scrollPause = 30 // Pause for 3 seconds when looping back
+					m.scrollPause = 30 // Pause for 30 ticks before restarting scroll (3s when playing, 15s when paused, 30s when idle)
 				}
 			}
 		} else {
@@ -507,9 +507,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vinylRotation = 0
 			m.vinylAccumulator = 0
 			// Display first frame immediately
-			if len(msg.frames) > 0 {
-				m.artworkEncoded = msg.frames[0]
-			}
+			m.artworkEncoded = msg.frames[0]
 		}
 		return m, nil
 
