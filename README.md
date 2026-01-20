@@ -208,6 +208,15 @@ timing:
 
 The configuration file is monitored for changes and will reload automatically.
 
+## Contributing
+
+Interested in contributing? Check out [TODO.md](TODO.md) for planned features and improvements! The roadmap includes:
+- Bug fixes and performance optimizations
+- New features (volume control, seek/scrub, lyrics, etc.)
+- Code quality improvements
+
+See [CLAUDE.md](CLAUDE.md) for development guidelines and architecture details.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
