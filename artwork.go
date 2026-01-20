@@ -11,11 +11,30 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/EdlinOrg/prominentcolor"
 	"github.com/nfnt/resize"
 	_ "golang.org/x/image/webp"
+)
+
+const (
+	// Kitty graphics protocol constants
+	kittyImageID   = 42   // Fixed image ID for artwork display
+	kittyChunkSize = 4096 // Max bytes per chunk in Kitty protocol
+	kittyFormatPNG = 100  // PNG format code for Kitty protocol
+
+	// Color extraction scoring weights
+	colorSaturationWeight = 2.5    // Prefer vibrant colors (high saturation)
+	colorLightnessWeight  = 1.5    // Balance with lightness
+	colorCountWeight      = 1000.0 // Normalize pixel count contribution
+
+	// Color filter thresholds for extractDominantColor
+	minLightness  = 0.3  // Too dark (unreadable)
+	maxLightness  = 0.85 // Too light (washed out)
+	minSaturation = 0.25 // Too gray (not vibrant)
+	idealMaxLight = 0.7  // Ideal maximum lightness
 )
 
 // decodeArtworkData decodes base64-encoded or raw image data into an image.Image
@@ -123,7 +142,7 @@ func extractDominantColor(img image.Image) (string, error) {
 		}
 
 		// Skip colors that are too dark, too light (near-white), or too unsaturated
-		if lightness < 0.3 || lightness > 0.85 || saturation < 0.25 {
+		if lightness < minLightness || lightness > maxLightness || saturation < minSaturation {
 			continue
 		}
 
@@ -131,12 +150,12 @@ func extractDominantColor(img image.Image) (string, error) {
 		// Prefer vibrant colors (high saturation) that are reasonably light
 		// Ideal lightness is around 0.5-0.7 (readable but not washed out)
 		lightnessScore := lightness
-		if lightness > 0.7 {
+		if lightness > idealMaxLight {
 			// Penalize very light colors
-			lightnessScore = 0.7 - (lightness - 0.7)
+			lightnessScore = idealMaxLight - (lightness - idealMaxLight)
 		}
 
-		score := (saturation * 2.5) + (lightnessScore * 1.5) + (float64(count) / 1000.0)
+		score := (saturation * colorSaturationWeight) + (lightnessScore * colorLightnessWeight) + (float64(count) / colorCountWeight)
 
 		candidates = append(candidates, colorScore{rgb: rgb, count: count, score: score})
 	}
@@ -152,13 +171,9 @@ func extractDominantColor(img image.Image) (string, error) {
 	}
 
 	// Sort by score (highest first)
-	for i := 0; i < len(candidates); i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].score > candidates[i].score {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].score > candidates[j].score
+	})
 
 	// Use the highest scoring color
 	best := candidates[0]
@@ -304,27 +319,23 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int, frameCount int) (
 	// Encode as base64 for Kitty protocol
 	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
 
-	// Kitty protocol needs chunking for large payloads (max 4096 bytes per chunk)
-	const chunkSize = 4096
+	// Kitty protocol needs chunking for large payloads
 	var result strings.Builder
-
-	// Use a fixed image ID - in vinyl mode, DON'T delete to avoid flashing
-	const imageID = 42
 
 	// Skip delete in vinyl mode - just overwrite the image in place for smooth animation
 	if !cfg.Artwork.VinylMode {
-		result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID))
+		result.WriteString(fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", kittyImageID))
 	}
 
-	if len(encoded) <= chunkSize {
+	if len(encoded) <= kittyChunkSize {
 		// Small enough to send in one go
 		// Use columns (c) instead of pixels for zoom-independent sizing
 		// Height is auto-calculated to maintain aspect ratio
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, cfg.Artwork.WidthColumns, encoded))
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=%d,t=d,i=%d,c=%d,C=1;%s\033\\", kittyFormatPNG, kittyImageID, cfg.Artwork.WidthColumns, encoded))
 	} else {
 		// Need to chunk the data
-		for i := 0; i < len(encoded); i += chunkSize {
-			end := i + chunkSize
+		for i := 0; i < len(encoded); i += kittyChunkSize {
+			end := i + kittyChunkSize
 			if end > len(encoded) {
 				end = len(encoded)
 			}
@@ -332,13 +343,13 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int, frameCount int) (
 
 			if i == 0 {
 				// First chunk with columns-based sizing
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, cfg.Artwork.WidthColumns, chunk))
-			} else if end == len(encoded) {
-				// Last chunk - m=0 (no more data)
-				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
-			} else {
-				// Middle chunk - m=1 (more data coming)
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=%d,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", kittyFormatPNG, kittyImageID, cfg.Artwork.WidthColumns, chunk))
+			} else if end < len(encoded) {
+				// Middle chunk
 				result.WriteString(fmt.Sprintf("\033_Gm=1;%s\033\\", chunk))
+			} else {
+				// Last chunk
+				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
 			}
 		}
 	}

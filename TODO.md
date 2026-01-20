@@ -60,24 +60,26 @@ This document tracks planned improvements, features, and known issues for goplay
   - Files: `artwork.go`, `model.go`
   - **Completed**: Created `decodeArtworkData()` helper and `processArtwork()` convenience function
 
-- [ ] **Replace bubble sort with sort.Slice()** - Color candidate sorting uses O(n²) algorithm (Effort: S, Impact: Low)
+- [x] **Replace bubble sort with sort.Slice()** - Color candidate sorting uses O(n²) algorithm (Effort: S, Impact: Low) ✅
   - 2-line fix: use `sort.Slice()` from stdlib
   - Better performance with many color candidates
   - Files: `artwork.go` (extractDominantColor function)
+  - **Completed**: v0.3.1 polish work
 
-- [ ] **Better error wrapping** - Generic errors without context make debugging hard (Effort: S, Impact: Medium)
+- [x] **Better error wrapping** - Generic errors without context make debugging hard (Effort: S, Impact: Medium) ✅
   - Use `fmt.Errorf(...: %w, err)` throughout
-  - Add stderr logging for silent failures
+  - Better error context for debugging
   - Files: `media_darwin.go`, `media_linux.go`, `model.go`, `artwork.go`
+  - **Completed**: v0.3.1 polish work
 
 ### Visual Features
 
-- [ ] **Spinning vinyl record animation** - Animate album art as a rotating record (Effort: M, Impact: High)
+- [x] **Spinning vinyl record animation** - Animate album art as a rotating record (Effort: M, Impact: High) ✅
   - Circle crop artwork to look like a vinyl record
   - Rotate on each tick when playing, stop when paused
-  - Add record center/label detail with track info
-  - Optional: speed matches BPM if available
+  - Configurable RPM and frame count (45 or 90 frames)
   - Files: `artwork.go`, `view.go`, `model.go`
+  - **Completed**: PR #38 merged, smooth rotation with configurable speed
 
 - [ ] **Audio visualizer** - CAVA-style spectrum analyzer (Effort: L, Impact: High)
   - Integration with CAVA or custom FFT implementation
@@ -149,10 +151,11 @@ This document tracks planned improvements, features, and known issues for goplay
 
 ### Code Quality
 
-- [ ] **Document magic numbers** - Add const declarations with comments (Effort: S, Impact: Low)
-  - Examples: scroll rate, pause duration, sampling rate, score coefficients
-  - Improves code clarity
+- [x] **Document magic numbers** - Add const declarations with comments (Effort: S, Impact: Low) ✅
+  - Added constants for: scroll rate, pause duration, tick rates, Kitty protocol, color scoring
+  - Improves code clarity and maintainability
   - Files: `model.go`, `artwork.go`, `text.go`
+  - **Completed**: v0.3.1 polish work
 
 - [ ] **Add debug mode** - Flag `--debug` for verbose logging (Effort: S, Impact: Low)
   - Log: player commands, timing info, artwork processing
@@ -226,8 +229,29 @@ This document tracks planned improvements, features, and known issues for goplay
 
 ## ✅ Recently Completed
 
-### v0.3.0 (2026-01-20)
-- [x] **Split main.go into modules** - Complete refactoring into focused modules
+### v0.3.1 (2026-01-20) - Code Quality Polish
+- [x] **Replace bubble sort with sort.Slice()** - Improved color sorting algorithm
+  - Changed O(n²) bubble sort to O(n log n) standard library sort
+  - Better performance with many color candidates
+- [x] **Better error wrapping** - Enhanced error context for debugging
+  - Added `fmt.Errorf(...: %w, err)` throughout media controllers
+  - Improved error messages with better context
+- [x] **Document magic numbers** - Added const declarations
+  - Constants for: scroll timing, tick rates, Kitty protocol, color scoring
+  - Improved code clarity and maintainability
+
+### v0.3.0 (2026-01-20) - Major Features & Performance
+- [x] **Spinning vinyl record** - Smooth rotating artwork animation (PR #38)
+  - Circle-cropped artwork with configurable RPM
+  - 45 or 90 frame options for memory/smoothness tradeoff
+- [x] **Performance optimizations** - Significant CPU/memory improvements (PR #39)
+  - Binary size: 13MB → 8.5MB (34.6% reduction)
+  - Adaptive tick rates based on playback state
+  - Smart artwork fetching (skip when paused)
+  - 60-80% CPU reduction when paused
+- [x] **Fix artwork duplication on resize** - Terminal resize bug fixed (PR #39)
+  - Properly clears Kitty graphics on window resize
+- [x] **Split main.go into modules** - Complete refactoring into focused modules (PR #33)
   - Reduced main.go from 929 lines to 39 lines (95% reduction)
   - Created: `config.go`, `model.go`, `view.go`, `artwork.go`, `text.go`
   - Each module has single, clear responsibility
