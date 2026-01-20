@@ -751,11 +751,15 @@ func (m model) View() string {
 
 	helpText := lipgloss.JoinHorizontal(
 		lipgloss.Center,
-		"Play/Pause: "+highlight.Render("p"),
-		"  Next: "+highlight.Render("n"),
-		"  Previous: "+highlight.Render("b"),
-		"  Toggle Art: "+highlight.Render("a"),
-		"  Quit: "+highlight.Render("q"),
+		highlight.Render("󰐊 p"),
+		" │ ",
+		highlight.Render("󰒭 n"),
+		" │ ",
+		highlight.Render("󰒮 b"),
+		" │ ",
+		highlight.Render("󰋩 a"),
+		" │ ",
+		highlight.Render("󰩈 q"),
 	)
 
 	fullUI := lipgloss.JoinVertical(lipgloss.Center, contentStr, "\n"+helpText)
