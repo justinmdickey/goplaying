@@ -705,11 +705,12 @@ func (m model) View() string {
 		addLine("󰠃 ", scrollText(m.songData.Artist, maxLen, m.scrollOffset))
 		addLine("󰀥 ", scrollText(m.songData.Album, maxLen, m.scrollOffset))
 
-		// Use different icon based on play state
+		// Use different icon based on play state (case-insensitive)
 		statusIcon := "󰐊 " // play icon (default)
-		if m.songData.Status == "paused" {
+		statusLower := strings.ToLower(m.songData.Status)
+		if statusLower == "paused" {
 			statusIcon = "󰏤 " // pause icon
-		} else if m.songData.Status == "stopped" {
+		} else if statusLower == "stopped" {
 			statusIcon = "󰓛 " // stop icon
 		}
 		addLine(statusIcon, m.songData.Status)
