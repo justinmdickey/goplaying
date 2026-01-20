@@ -322,13 +322,8 @@ func initConfig() {
 		if err := viper.Unmarshal(&newCfg); err == nil {
 			// Validate the new config
 			if validationErrors := validateConfig(&newCfg); len(validationErrors) > 0 {
-				// Invalid config - keep old config and show warnings
-				fmt.Fprintf(os.Stderr, "\n⚠️  Config reload failed due to validation errors:\n")
-				for _, err := range validationErrors {
-					fmt.Fprintf(os.Stderr, "   • %s\n", err.Error())
-				}
-				fmt.Fprintf(os.Stderr, "   → Keeping previous valid configuration\n")
-				fmt.Fprintf(os.Stderr, "   → Fix errors in ~/.config/goplaying/config.yaml\n\n")
+				// Invalid config - silently keep old config
+				// Don't print to stderr during TUI operation as it corrupts the display
 				return
 			}
 
