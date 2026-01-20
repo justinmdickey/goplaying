@@ -576,6 +576,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Received fresh song data
 		if msg.err != nil {
 			m.lastError = msg.err
+			// Clear artwork when nothing is playing
+			m.artworkEncoded = ""
+			m.lastTrackID = ""
 		} else {
 			// Store full text and reset scroll when track changes
 			trackID := fmt.Sprintf("%s|%s", msg.title, msg.artist)
