@@ -38,7 +38,7 @@ This document tracks planned improvements, features, and known issues for goplay
 - [ ] **Add config validation** - Prevent invalid config values causing runtime errors (Effort: M, Impact: High)
   - Validate: negative values, padding > max_width, unreasonable refresh rates
   - Show clear error messages on startup
-  - Files: `main.go` (config.go after split)
+  - Files: `config.go`
 
 ---
 
@@ -46,42 +46,44 @@ This document tracks planned improvements, features, and known issues for goplay
 
 ### Code Quality & Performance
 
-- [ ] **Split main.go into modules** - Break 888-line file into focused modules (Effort: M, Impact: High)
-  - Proposed: `config.go`, `model.go`, `view.go`, `artwork.go`, `text.go`
+- [x] **Split main.go into modules** - Break 929-line file into focused modules (Effort: M, Impact: High) ✅
+  - Created: `config.go`, `model.go`, `view.go`, `artwork.go`, `text.go`
   - Improves maintainability and testability
-  - Files: `main.go` → multiple new files
+  - Files: `main.go` (39 lines) + 5 new modular files
+  - **Completed**: PR #33 merged, 95% reduction in main.go size
 
 - [ ] **Fix redundant image decoding** - Artwork decoded twice (color + Kitty encoding) (Effort: S, Impact: High)
   - Decode once, pass `image.Image` to both functions
   - 50% reduction in image processing time on track changes
-  - Files: `main.go` lines 148-374
+  - Files: `artwork.go`
 
 - [ ] **Replace bubble sort with sort.Slice()** - Color candidate sorting uses O(n²) algorithm (Effort: S, Impact: Low)
   - 2-line fix: use `sort.Slice()` from stdlib
   - Better performance with many color candidates
-  - Files: `main.go` line 268-274
+  - Files: `artwork.go` (extractDominantColor function)
 
 - [ ] **Better error wrapping** - Generic errors without context make debugging hard (Effort: S, Impact: Medium)
   - Use `fmt.Errorf(...: %w, err)` throughout
   - Add stderr logging for silent failures
-  - Files: `media_darwin.go`, `media_linux.go`, `main.go`
+  - Files: `media_darwin.go`, `media_linux.go`, `model.go`, `artwork.go`
 
 ### User-Facing Features
 
 - [ ] **Volume control** - Adjust volume with keybinds (+ / - keys) (Effort: M, Impact: High)
   - Platform-specific: osascript (macOS), playerctl/pactl (Linux)
   - Show volume percentage in UI
-  - Files: `main.go`, `media_darwin.go`, `media_linux.go`
+  - Files: `model.go`, `view.go`, `media_darwin.go`, `media_linux.go`
 
 - [ ] **Seek/scrub support** - Skip forward/back by N seconds (→ / ← keys) (Effort: M, Impact: High)
   - Platform-specific commands for position control
   - Configurable seek interval (default 5-10 seconds)
-  - Files: `main.go`, `media_darwin.go`, `media_linux.go`
+  - Files: `model.go`, `media_darwin.go`, `media_linux.go`
 
-- [ ] **Add unit tests** - No test coverage currently (Effort: M, Impact: High)
+- [ ] **Add unit tests** - Limited test coverage currently (Effort: M, Impact: High)
   - Priority: `scrollText()`, `extractDominantColor()`, `formatTime()`, `getCurrentPosition()`
   - Add benchmark tests for performance-critical functions
-  - Files: New `*_test.go` files
+  - Files: New `text_test.go`, `artwork_test.go`, `model_test.go`
+  - Note: `config_test.go` already exists with SafeConfig tests
 
 ---
 
@@ -92,12 +94,12 @@ This document tracks planned improvements, features, and known issues for goplay
 - [ ] **Move color extraction to background goroutine** - Blocks UI thread during track changes (Effort: S, Impact: Medium)
   - Extract in goroutine with 100ms timeout
   - Smoother track transitions
-  - Files: `main.go` line 428
+  - Files: `model.go` (fetchSongData function)
 
 - [ ] **Cache text length calculation** - Recalculates on every UI tick (100ms) (Effort: S, Impact: Low)
   - Cache max length, recalculate only on track change
   - Minor CPU savings
-  - Files: `main.go` line 560-584
+  - Files: `model.go` (Update function, tickMsg case)
 
 - [ ] **Extract shared command execution helper** - Duplicate exec.Command patterns (Effort: S, Impact: Low)
   - Create `media_common.go` with `runCommand()` helper
@@ -110,29 +112,29 @@ This document tracks planned improvements, features, and known issues for goplay
   - Simple JSON/YAML storage in config dir
   - Show indicator in UI for favorited tracks
   - Keybind: `f` to toggle favorite
-  - Files: `main.go`, new `favorites.go`
+  - Files: `model.go`, `view.go`, new `favorites.go`
 
 - [ ] **Notification support** - Desktop notifications on track change (Effort: M, Impact: Medium)
   - Platform-specific: terminal-notifier/osascript (macOS), notify-send (Linux)
   - Config option: `notifications.enabled: true`
-  - Files: `main.go`, `media_darwin.go`, `media_linux.go`
+  - Files: `model.go`, `media_darwin.go`, `media_linux.go`
 
 - [ ] **Artwork caching to disk** - Cache artwork locally, skip redownload (Effort: M, Impact: Medium)
   - Storage: `~/.cache/goplaying/artwork/`
   - Key: Hash of track ID or artwork URL
   - Faster loading, less bandwidth
-  - Files: New `cache.go`, `main.go`
+  - Files: New `cache.go`, `model.go`
 
 - [ ] **Custom key bindings** - User-configurable keybinds (Effort: M, Impact: Medium)
   - Config section: `keybinds.play_pause: "space"`
   - Allow remapping all controls
-  - Files: `main.go` (config.go after split)
+  - Files: `config.go`, `model.go`
 
 - [ ] **Repeat/shuffle toggles** - Show and toggle repeat/shuffle modes (Effort: M, Impact: Medium)
   - Keybinds: `r` (repeat), `s` (shuffle)
   - Fetch current state from player
   - Show indicators in UI
-  - Files: `main.go`, `media_darwin.go`, `media_linux.go`
+  - Files: `model.go`, `view.go`, `media_darwin.go`, `media_linux.go`
 
 ---
 
@@ -143,13 +145,13 @@ This document tracks planned improvements, features, and known issues for goplay
 - [ ] **Document magic numbers** - Add const declarations with comments (Effort: S, Impact: Low)
   - Examples: scroll rate, pause duration, sampling rate, score coefficients
   - Improves code clarity
-  - Files: `main.go`
+  - Files: `model.go`, `artwork.go`, `text.go`
 
 - [ ] **Add debug mode** - Flag `--debug` for verbose logging (Effort: S, Impact: Low)
   - Log: player commands, timing info, artwork processing
   - Output to stderr or file
   - Easier issue diagnosis
-  - Files: `main.go`
+  - Files: `main.go`, `model.go`, `media_darwin.go`, `media_linux.go`
 
 - [ ] **Add benchmarking script** - Test performance with various configs (Effort: S, Impact: Low)
   - Measure: startup time, color extraction, rendering FPS
@@ -161,7 +163,7 @@ This document tracks planned improvements, features, and known issues for goplay
 - [ ] **Mini mode** - Compact single-line display (Effort: S, Impact: Low)
   - Flag `--mini` or config `ui.mode: "mini"`
   - Use case: status bar integration, tmux/screen
-  - Files: `main.go`
+  - Files: `main.go`, `view.go`
 
 - [ ] **Playback history/stats** - Track listening history, show stats (Effort: M, Impact: Medium)
   - Storage: SQLite or JSON log
@@ -172,7 +174,7 @@ This document tracks planned improvements, features, and known issues for goplay
 - [ ] **Multiple color extraction modes** - More algorithms beyond vibrant (Effort: M, Impact: Low)
   - Options: vibrant (current), muted/pastel, complementary, accent only
   - Config: `ui.color_strategy: "vibrant"`
-  - Files: `main.go` (artwork.go after split)
+  - Files: `artwork.go`
 
 ---
 
@@ -208,6 +210,13 @@ This document tracks planned improvements, features, and known issues for goplay
 ---
 
 ## ✅ Recently Completed
+
+### v0.3.0 (2026-01-20)
+- [x] **Split main.go into modules** - Complete refactoring into focused modules
+  - Reduced main.go from 929 lines to 39 lines (95% reduction)
+  - Created: `config.go`, `model.go`, `view.go`, `artwork.go`, `text.go`
+  - Each module has single, clear responsibility
+  - Dramatically improved maintainability and testability
 
 ### v0.2.4 (2026-01-20)
 - [x] **Configurable artwork size** - Made image dimensions configurable

@@ -10,15 +10,44 @@
 
 ## Key Files
 
-### Core Application
-- **main.go** (718 lines): Main TUI application
-  - Model-view-update pattern with Bubble Tea
+### Core Application (Modular Architecture)
+The application is split into focused modules for better maintainability:
+
+- **main.go** (39 lines): Application entry point
+  - Command-line flag definitions
+  - Initializes configuration
+  - Creates and runs Bubble Tea program
+  
+- **config.go** (146 lines): Configuration management
   - `Config` struct with Viper configuration management
-  - `model` struct with song data, artwork, scrolling state
+  - `SafeConfig`: Thread-safe config wrapper with `sync.RWMutex`
+  - `initConfig()`: Loads config from `~/.config/goplaying/config.yaml`
+  - `watchConfigCmd()`: Live config reload via fsnotify
+  - Global `config` variable (use `config.Get()` and `config.Set()` for thread safety)
+
+- **model.go** (335 lines): Bubble Tea model and business logic
+  - `SongData` struct: Current track metadata
+  - `model` struct: Application state (song data, artwork, scrolling state)
+  - `Init()`, `Update()`: Bubble Tea lifecycle methods
   - `fetchSongData()`: Background data fetching from media controller
-  - `encodeArtworkForKitty()`: Converts artwork to Kitty graphics protocol
+  - `getCurrentPosition()`: Smooth position interpolation for progress bar
+  - Message types: `tickMsg`, `fetchMsg`, `songDataMsg`
+
+- **view.go** (168 lines): UI rendering
+  - `View()`: Renders TUI with lipgloss styling
+  - Handles artwork display with Kitty graphics protocol
+  - Progress bar, scrolling text, help text
+  - Dynamic status icons (play/pause/stop)
+
+- **artwork.go** (248 lines): Image processing and color extraction
   - `extractDominantColor()`: K-means color extraction from artwork
+  - `encodeArtworkForKitty()`: Converts artwork to Kitty graphics protocol
   - `supportsKittyGraphics()`: Terminal capability detection
+  - Handles base64 encoding/decoding, image resizing, chunking
+
+- **text.go** (32 lines): Text utilities
+  - `formatTime()`: Converts seconds to MM:SS format
+  - `scrollText()`: Unicode-aware text scrolling with looping
 
 ### Platform-Specific Media Controllers
 - **media_darwin.go**: macOS implementation
@@ -97,10 +126,10 @@
 ## Common Tasks
 
 ### Adding Configuration Options
-1. Add field to `Config` struct in main.go with mapstructure tag
+1. Add field to `Config` struct in config.go with mapstructure tag
 2. Set default in `initConfig()` with `viper.SetDefault()`
 3. Add to config.example.yaml
-4. Access via `config.SectionName.FieldName`
+4. Access via `config.Get().SectionName.FieldName`
 
 ### Platform-Specific Code
 - Use build tags: `//go:build darwin` or `//go:build linux`
