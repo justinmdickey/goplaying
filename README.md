@@ -167,6 +167,7 @@ The controls are basic vim keybinds:
 - `n` - Next
 - `b` - Previous
 - `a` - Toggle album artwork
+- `?` - Toggle help display
 - `q` - Quit
 
 ## License

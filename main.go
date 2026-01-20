@@ -88,6 +88,9 @@ type model struct {
 	scrollOffset int // Current scroll position for text animation
 	scrollPause  int // Pause counter at start/end of scroll
 	scrollTick   int // Tick counter for slowing scroll speed
+
+	// UI state
+	showHelp bool // Whether to show help text
 }
 
 // UI refresh tick - fires every 100ms for smooth rendering
@@ -519,6 +522,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.fetchSongData()
 			}
 			return m, nil
+		case "?":
+			// Toggle help text
+			m.showHelp = !m.showHelp
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -749,18 +756,23 @@ func (m model) View() string {
 		Width(config.UI.MaxWidth).
 		Render(mainContent)
 
-	helpText := lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		highlight.Render("󰐊 p"),
-		" │ ",
-		highlight.Render("󰒭 n"),
-		" │ ",
-		highlight.Render("󰒮 b"),
-		" │ ",
-		highlight.Render("󰋩 a"),
-		" │ ",
-		highlight.Render("󰩈 q"),
-	)
+	// Build help text - either full help or hint to press ?
+	var helpText string
+	if m.showHelp {
+		helpText = lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			"Play/Pause: "+highlight.Render("p"),
+			"  Next: "+highlight.Render("n"),
+			"  Previous: "+highlight.Render("b"),
+			"  Toggle Art: "+highlight.Render("a"),
+			"  Quit: "+highlight.Render("q"),
+			"  Hide: "+highlight.Render("?"),
+		)
+	} else {
+		helpText = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("Press ? for help")
+	}
 
 	fullUI := lipgloss.JoinVertical(lipgloss.Center, contentStr, "\n"+helpText)
 
