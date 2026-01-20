@@ -704,7 +704,15 @@ func (m model) View() string {
 		addLine("󰎈 ", scrollText(m.songData.Title, maxLen, m.scrollOffset))
 		addLine("󰠃 ", scrollText(m.songData.Artist, maxLen, m.scrollOffset))
 		addLine("󰀥 ", scrollText(m.songData.Album, maxLen, m.scrollOffset))
-		addLine("󰐊 ", m.songData.Status)
+
+		// Use different icon based on play state
+		statusIcon := "󰐊 " // play icon (default)
+		if m.songData.Status == "paused" {
+			statusIcon = "󰏤 " // pause icon
+		} else if m.songData.Status == "stopped" {
+			statusIcon = "󰓛 " // stop icon
+		}
+		addLine(statusIcon, m.songData.Status)
 
 		if progress > 0 {
 			// Progress bar with smooth interpolated position - will be placed below
