@@ -70,23 +70,27 @@ This document tracks planned improvements, features, and known issues for goplay
   - Add stderr logging for silent failures
   - Files: `media_darwin.go`, `media_linux.go`, `model.go`, `artwork.go`
 
-### User-Facing Features
+### Visual Features
 
-- [ ] **Volume control** - Adjust volume with keybinds (+ / - keys) (Effort: M, Impact: High)
-  - Platform-specific: osascript (macOS), playerctl/pactl (Linux)
-  - Show volume percentage in UI
-  - Files: `model.go`, `view.go`, `media_darwin.go`, `media_linux.go`
+- [ ] **Spinning vinyl record animation** - Animate album art as a rotating record (Effort: M, Impact: High)
+  - Circle crop artwork to look like a vinyl record
+  - Rotate on each tick when playing, stop when paused
+  - Add record center/label detail with track info
+  - Optional: speed matches BPM if available
+  - Files: `artwork.go`, `view.go`, `model.go`
 
-- [ ] **Seek/scrub support** - Skip forward/back by N seconds (→ / ← keys) (Effort: M, Impact: High)
-  - Platform-specific commands for position control
-  - Configurable seek interval (default 5-10 seconds)
-  - Files: `model.go`, `media_darwin.go`, `media_linux.go`
+- [ ] **Audio visualizer** - CAVA-style spectrum analyzer (Effort: L, Impact: High)
+  - Integration with CAVA or custom FFT implementation
+  - Config options: bars/waves, position (above/below/beside)
+  - Color sync with artwork extraction
+  - Challenge: Getting audio data (FIFO/pipe from CAVA?)
+  - Files: New `visualizer.go`, `view.go`, `config.go`
 
-- [ ] **Add unit tests** - Limited test coverage currently (Effort: M, Impact: High)
-  - Priority: `scrollText()`, `extractDominantColor()`, `formatTime()`, `getCurrentPosition()`
-  - Add benchmark tests for performance-critical functions
-  - Files: New `text_test.go`, `artwork_test.go`, `model_test.go`
-  - Note: `config_test.go` already exists with SafeConfig tests
+- [ ] **Waveform display** - Show audio waveform of current track (Effort: L, Impact: Medium)
+  - Generate from audio file or fetch from streaming service
+  - Highlight current playback position
+  - Smooth scrolling progress indicator
+  - Files: New `waveform.go`, `view.go`
 
 ---
 
@@ -179,18 +183,31 @@ This document tracks planned improvements, features, and known issues for goplay
   - Config: `ui.color_strategy: "vibrant"`
   - Files: `artwork.go`
 
+- [ ] **Animated equalizer bars** - Simple ASCII/Unicode bar animation (Effort: S, Impact: Medium)
+  - Fake "dancing" bars that pulse with the music
+  - Randomized heights that sync to tempo (if no real audio data)
+  - Could be simple "━" bars that animate vertically
+  - Files: `view.go`, `model.go`
+
+- [ ] **Album art filters/effects** - Apply visual effects to artwork (Effort: M, Impact: Low)
+  - Options: blur, pixelate, ascii-art conversion, edge detection
+  - Config: `artwork.filter: "none"` (none/blur/pixel/ascii)
+  - Artistic/aesthetic customization
+  - Files: `artwork.go`
+
+- [ ] **Pulsing border on beat** - Border color pulses/flashes (Effort: S, Impact: Low)
+  - Fake beat detection (fixed interval) or use BPM metadata
+  - Border brightens/dims rhythmically
+  - Subtle visual interest
+  - Files: `view.go`, `model.go`
+
 ---
 
 ## 🔵 Future / Ideas
 
 ### Major Features (Exploratory)
 
-- [ ] **Playlist view** - Show current playlist/queue, navigate tracks (Effort: XL, Impact: High)
-  - New UI state with scrolling
-  - Challenge: MPRIS doesn't expose playlists well
-  - Major feature with significant complexity
-
-- [ ] **Lyrics display** - Show synchronized lyrics if available (Effort: XL, Impact: High)
+- [ ] **Lyrics display** - Show synchronized lyrics if available (Effort: L, Impact: High)
   - Options: Musixmatch API, tag metadata, local .lrc files
   - Sync lyrics to playback position
   - Requires lyrics source/API
@@ -204,11 +221,6 @@ This document tracks planned improvements, features, and known issues for goplay
   - Dynamic loading of media backends
   - Support for web APIs (Last.fm, Spotify Web API, etc.)
   - Major architectural change
-
-- [ ] **Web remote control** - Control playback from browser/mobile (Effort: XL, Impact: Medium)
-  - Embedded HTTP server
-  - WebSocket for real-time updates
-  - Mobile-friendly web UI
 
 ---
 
