@@ -5,6 +5,8 @@ ui:
 artwork:
   enabled: true
   padding: 15
+  width_pixels: 300   # Pixel width for resizing artwork (height maintains aspect ratio)
+  width_columns: 13   # Terminal column width for display (larger = bigger artwork)
 text:
   max_length_with_art: 22
   max_length_no_art: 36

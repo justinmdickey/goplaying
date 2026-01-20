@@ -42,6 +42,8 @@ ui:
 artwork:
   enabled: true
   padding: 15
+  width_pixels: 300   # Pixel width for resizing artwork (height maintains aspect ratio)
+  width_columns: 13   # Terminal column width for display (larger = bigger artwork)
 ```
 
 ## Installation
@@ -153,6 +155,8 @@ make linux
 
 ## Usage
 
+### Command-line Flags
+
 Custom colors can be set using flags:
 `--color` or `-c` - Set the color of the text. This can be a color name or hex code.
 
@@ -162,6 +166,8 @@ Custom colors can be set using flags:
 ./goplaying -c=#ff0000
 ```
 
+### Keybinds
+
 The controls are basic vim keybinds:
 - `p` - Play/Pause
 - `n` - Next
@@ -169,6 +175,38 @@ The controls are basic vim keybinds:
 - `a` - Toggle album artwork
 - `?` - Toggle help display
 - `q` - Quit
+
+### Configuration File
+
+Create a configuration file at `~/.config/goplaying/config.yaml` to customize the display:
+
+```yaml
+ui:
+  color: "2"            # ANSI color or hex code
+  color_mode: "auto"    # "manual" or "auto" (extract from artwork)
+  max_width: 45         # Width of the main box
+
+artwork:
+  enabled: true         # Show album artwork
+  padding: 15           # Space reserved for artwork (columns)
+  width_pixels: 300     # Pixel width for resizing artwork (height maintains aspect ratio)
+  width_columns: 13     # Terminal column width for display (larger = bigger artwork)
+
+text:
+  max_length_with_art: 22    # Max text width when artwork is shown
+  max_length_no_art: 36      # Max text width without artwork
+
+timing:
+  ui_refresh_ms: 100         # UI refresh rate in milliseconds
+  data_fetch_ms: 1000        # How often to fetch metadata from player
+```
+
+**Artwork sizing tips:**
+- `width_pixels`: Higher values = better quality but slower processing (200-500 recommended)
+- `width_columns`: Controls display size in terminal (10-20 typical range)
+- Adjust `padding` if artwork appears cut off or has too much space
+
+The configuration file is monitored for changes and will reload automatically.
 
 ## License
 

@@ -31,8 +31,10 @@ type Config struct {
 		MaxWidth  int    `mapstructure:"max_width"`
 	} `mapstructure:"ui"`
 	Artwork struct {
-		Enabled bool `mapstructure:"enabled"`
-		Padding int  `mapstructure:"padding"`
+		Enabled      bool `mapstructure:"enabled"`
+		Padding      int  `mapstructure:"padding"`
+		WidthPixels  int  `mapstructure:"width_pixels"`
+		WidthColumns int  `mapstructure:"width_columns"`
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
@@ -322,7 +324,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 	// Resize maintaining aspect ratio - keep it reasonable for terminal display
 	// We'll let Kitty handle the final sizing based on cell dimensions
-	resized := resize.Resize(300, 0, img, resize.Lanczos3)
+	resized := resize.Resize(uint(config.Artwork.WidthPixels), 0, img, resize.Lanczos3)
 
 	// Encode as PNG
 	var buf bytes.Buffer
@@ -344,8 +346,8 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 	if len(encoded) <= chunkSize {
 		// Small enough to send in one go
 		// Use columns (c) instead of pixels for zoom-independent sizing
-		// c=13 means 13 terminal columns wide, height auto-calculated
-		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1;%s\033\\", imageID, encoded))
+		// Height is auto-calculated to maintain aspect ratio
+		result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1;%s\033\\", imageID, config.Artwork.WidthColumns, encoded))
 	} else {
 		// Need to chunk the data
 		for i := 0; i < len(encoded); i += chunkSize {
@@ -357,7 +359,7 @@ func encodeArtworkForKitty(artworkData []byte) (string, error) {
 
 			if i == 0 {
 				// First chunk with columns-based sizing
-				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=13,C=1,m=1;%s\033\\", imageID, chunk))
+				result.WriteString(fmt.Sprintf("\033_Ga=T,f=100,t=d,i=%d,c=%d,C=1,m=1;%s\033\\", imageID, config.Artwork.WidthColumns, chunk))
 			} else if end == len(encoded) {
 				// Last chunk - m=0 (no more data)
 				result.WriteString(fmt.Sprintf("\033_Gm=0;%s\033\\", chunk))
@@ -802,6 +804,8 @@ func initConfig() {
 	viper.SetDefault("ui.max_width", 45)
 	viper.SetDefault("artwork.enabled", true)
 	viper.SetDefault("artwork.padding", 15)
+	viper.SetDefault("artwork.width_pixels", 300)
+	viper.SetDefault("artwork.width_columns", 13)
 	viper.SetDefault("text.max_length_with_art", 22)
 	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)
