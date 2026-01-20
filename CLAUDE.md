@@ -1,5 +1,25 @@
 # Claude Code Assistant Guide for goplaying
 
+## Development Workflow
+
+### Branch Strategy
+**ALWAYS create a new branch for any changes** - features, fixes, refactors, documentation, etc.
+
+Branch naming conventions:
+- **Features**: `feat/description` (e.g., `feat/volume-control`)
+- **Bug fixes**: `fix/description` (e.g., `fix/redundant-image-decoding`)
+- **Refactoring**: `refactor/description` (e.g., `refactor/split-main`)
+- **Documentation**: `docs/description` (e.g., `docs/update-readme`)
+- **Chores**: `chore/description` (e.g., `chore/update-deps`)
+
+**Process**:
+1. Create branch: `git checkout -b <type>/short-description`
+2. Make changes and commit
+3. Push and create PR when ready
+4. Merge to main after review/approval
+
+Never commit directly to main unless explicitly requested.
+
 ## Project Overview
 
 **goplaying** is a cross-platform TUI (Terminal User Interface) music player status display written in Go. It shows currently playing music with album artwork, playback controls, and auto-extracted color themes.

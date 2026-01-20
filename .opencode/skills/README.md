@@ -16,6 +16,18 @@ Complete guide for creating and publishing new releases, including:
 
 **Invoke with:** Ask OpenCode to "use the release skill" or "help me create a release"
 
+### `testing.md` - Testing Workflow
+Comprehensive guide for testing goplaying, including:
+- Running tests with race detection and coverage
+- Writing unit, integration, and benchmark tests
+- Test structure and best practices
+- Platform-specific testing
+- Test helper utilities
+
+**Use when:** Writing new features, fixing bugs, or ensuring code quality
+
+**Invoke with:** Ask OpenCode to "use the testing skill" or "help me write tests"
+
 ## How to Use Skills
 
 Skills can be invoked by:
