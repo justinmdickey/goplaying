@@ -39,12 +39,14 @@ type model struct {
 	supportsKitty  bool   // Whether terminal supports Kitty graphics
 	lastTrackID    string // Track ID for caching artwork (title+artist)
 	rawArtworkData []byte // Raw artwork data for vinyl rotation re-encoding
+	forceDeleteImg bool   // Force delete image on next render (for resize cleanup)
 
 	// Vinyl record animation (easter egg)
-	vinylRotation     int      // Current rotation angle (0-89) for spinning record effect
-	vinylFrameCache   []string // Pre-rendered vinyl frames for smooth playback (90 frames)
+	vinylRotation     int      // Current rotation angle (0-89 or 0-44) for spinning record effect
+	vinylFrameCache   []string // Pre-rendered vinyl frames for smooth playback (45 or 90 frames)
 	vinylCacheTrackID string   // Track ID for which frames are cached
 	vinylAccumulator  float64  // Fractional frame accumulator for smooth rotation at any RPM
+	vinylCachedFrames int      // Number of frames in cache (for detecting config changes)
 
 	// Text scrolling state
 	scrollOffset int // Current scroll position for text animation
@@ -81,10 +83,28 @@ type vinylFramesMsg struct {
 	trackID string   // Track ID these frames belong to
 }
 
-// Schedule next UI refresh tick
-func tickCmd() tea.Cmd {
+// Clear the forceDeleteImg flag after one render cycle
+type clearDeleteFlagMsg struct{}
+
+// Schedule next UI refresh tick with adaptive rate
+// Playing: 100ms (smooth progress + vinyl rotation)
+// Paused: 500ms (just scrolling, save CPU)
+// Idle/Error: 1000ms (minimal updates)
+func (m model) tickCmd() tea.Cmd {
 	cfg := config.Get()
-	return tea.Tick(time.Duration(cfg.Timing.UIRefreshMs)*time.Millisecond, func(t time.Time) tea.Msg {
+	tickRate := time.Duration(cfg.Timing.UIRefreshMs) * time.Millisecond
+
+	// Adaptive tick rate based on playback state
+	if m.lastError != nil {
+		// Idle/Error state: slowest rate
+		tickRate = 1000 * time.Millisecond
+	} else if !m.isPlaying {
+		// Paused: medium rate (still need scrolling)
+		tickRate = 500 * time.Millisecond
+	}
+	// Playing: use configured rate (default 100ms)
+
+	return tea.Tick(tickRate, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -98,11 +118,13 @@ func fetchCmd() tea.Cmd {
 }
 
 // Generate vinyl frames in background (doesn't block UI)
-func generateVinylFramesCmd(rawArtwork []byte, trackID string) tea.Cmd {
+func generateVinylFramesCmd(rawArtwork []byte, trackID string, frameCount int) tea.Cmd {
 	return func() tea.Msg {
-		frames := make([]string, 90)
-		for i := 0; i < 90; i++ {
-			if _, encoded, err := processArtwork(rawArtwork, false, i); err == nil {
+		frames := make([]string, frameCount)
+
+		for i := 0; i < frameCount; i++ {
+			// Pass frame index and total frame count
+			if _, encoded, err := processArtwork(rawArtwork, false, i, frameCount); err == nil {
 				frames[i] = encoded
 			}
 		}
@@ -142,8 +164,15 @@ func (m model) fetchSongData() tea.Cmd {
 			// Create track ID for caching
 			trackID := fmt.Sprintf("%s|%s", title, artist)
 
+			// Skip expensive artwork fetch if paused AND track hasn't changed
+			// This is the main CPU bottleneck when idle
+			skipArtworkFetch := (strings.ToLower(status) != "playing") && (trackID == m.lastTrackID)
+
 			// Fetch artwork data
-			artworkData, err := m.mediaController.GetArtwork()
+			var artworkData []byte
+			if !skipArtworkFetch {
+				artworkData, err = m.mediaController.GetArtwork()
+			}
 			if err == nil && len(artworkData) > 0 {
 				// Always store raw artwork for vinyl mode
 				rawArtwork = artworkData
@@ -164,7 +193,8 @@ func (m model) fetchSongData() tea.Cmd {
 								extractedColor = ""
 							}
 						}()
-						color, encoded, err := processArtwork(artworkData, shouldExtractColor, m.vinylRotation)
+						// Pass frame count for proper rotation angle calculation
+						color, encoded, err := processArtwork(artworkData, shouldExtractColor, m.vinylRotation, cfg.Artwork.VinylFrames)
 						if err == nil {
 							if shouldExtractColor && color != "" {
 								extractedColor = color
@@ -211,10 +241,42 @@ func (m model) getCurrentPosition() float64 {
 	return currentPos
 }
 
+// updateVinylRotation handles vinyl record rotation animation
+// Isolated function to minimize performance impact on normal mode
+func (m *model) updateVinylRotation(cfg Config) {
+	frameCount := cfg.Artwork.VinylFrames
+
+	// Early return if vinyl mode is disabled or not ready
+	if !cfg.Artwork.VinylMode || !m.isPlaying || len(m.vinylFrameCache) != frameCount {
+		return
+	}
+
+	// Calculate how many frames to advance per tick based on RPM
+	// Formula: frames_per_second = RPM / 60 * frame_count
+	//          frames_per_tick = frames_per_second * tick_duration_seconds
+	framesPerSecond := cfg.Artwork.VinylRPM / 60.0 * float64(frameCount)
+
+	// Tick duration depends on playback state (adaptive tick rate)
+	tickDuration := 0.1 // 100ms when playing
+	framesPerTick := framesPerSecond * tickDuration
+
+	// Accumulate fractional frames
+	m.vinylAccumulator += framesPerTick
+
+	// Advance whole frames when accumulator >= 1
+	for m.vinylAccumulator >= 1.0 {
+		m.vinylRotation = (m.vinylRotation + 1) % frameCount
+		m.vinylAccumulator -= 1.0
+
+		// Use pre-cached frame - no expensive re-encoding!
+		m.artworkEncoded = m.vinylFrameCache[m.vinylRotation]
+	}
+}
+
 func (m model) Init() tea.Cmd {
 	// Start both the UI refresh loop and data fetch loop
 	return tea.Batch(
-		tickCmd(),
+		m.tickCmd(),
 		fetchCmd(),
 		watchConfigCmd(),
 	)
@@ -266,6 +328,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+		// On resize, delete the Kitty image to prevent duplication, then redraw
+		if m.supportsKitty && m.artworkEncoded != "" {
+			// Set flag to trigger delete on next View(), then clear it
+			m.forceDeleteImg = true
+
+			// Return a command that will clear the flag after one render cycle
+			return m, func() tea.Msg {
+				return clearDeleteFlagMsg{}
+			}
+		}
+
 	case configReloadMsg:
 		// Config file changed, update color and artwork setting
 		cfg := config.Get()
@@ -277,14 +350,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !cfg.Artwork.VinylMode && len(m.vinylFrameCache) > 0 {
 			m.vinylFrameCache = nil
 			m.vinylCacheTrackID = ""
+			m.vinylCachedFrames = 0
 			m.lastTrackID = "" // Force artwork reload
 			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
+		}
+
+		// If vinyl_frames changed, regenerate cache
+		if cfg.Artwork.VinylMode && len(m.vinylFrameCache) > 0 && m.vinylCachedFrames != cfg.Artwork.VinylFrames {
+			m.vinylFrameCache = nil
+			m.vinylCacheTrackID = ""
+			m.vinylCachedFrames = 0
+			m.vinylRotation = 0
+			m.vinylAccumulator = 0
+			if len(m.rawArtworkData) > 0 && m.lastTrackID != "" {
+				return m, tea.Batch(watchConfigCmd(), generateVinylFramesCmd(m.rawArtworkData, m.lastTrackID, cfg.Artwork.VinylFrames))
+			}
 		}
 
 		// If vinyl mode was enabled, generate frames
 		if cfg.Artwork.VinylMode && len(m.vinylFrameCache) == 0 && len(m.rawArtworkData) > 0 && m.lastTrackID != "" {
 			m.vinylCacheTrackID = ""
-			return m, tea.Batch(watchConfigCmd(), generateVinylFramesCmd(m.rawArtworkData, m.lastTrackID))
+			return m, tea.Batch(watchConfigCmd(), generateVinylFramesCmd(m.rawArtworkData, m.lastTrackID, cfg.Artwork.VinylFrames))
 		}
 
 		if !cfg.Artwork.Enabled && m.artworkEncoded != "" {
@@ -304,59 +390,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollTick++
 		cfg := config.Get()
 
-		// Vinyl mode: rotate artwork when playing
-		// Uses pre-cached frames for near-zero CPU overhead during playback
-		// Speed is configurable via vinyl_rpm (e.g., 33.33 for classic vinyl, 45 for 7" singles)
-		if cfg.Artwork.VinylMode && m.isPlaying && len(m.vinylFrameCache) == 90 {
-			// Calculate how many frames to advance per tick based on RPM
-			// Formula: frames_per_second = RPM / 60 * 90 frames
-			//          frames_per_tick = frames_per_second * 0.1 seconds_per_tick
-			framesPerSecond := cfg.Artwork.VinylRPM / 60.0 * 90.0
-			framesPerTick := framesPerSecond * 0.1
+		// Update vinyl rotation if enabled
+		m.updateVinylRotation(cfg)
 
-			// Accumulate fractional frames
-			m.vinylAccumulator += framesPerTick
-
-			// Advance whole frames when accumulator >= 1
-			for m.vinylAccumulator >= 1.0 {
-				m.vinylRotation = (m.vinylRotation + 1) % 90
-				m.vinylAccumulator -= 1.0
-
-				// Use pre-cached frame - no expensive re-encoding!
-				m.artworkEncoded = m.vinylFrameCache[m.vinylRotation]
-			}
+		// Text scrolling - only if text doesn't fit on screen
+		maxLen := cfg.Text.MaxLengthWithArt
+		if !m.supportsKitty || !cfg.Artwork.Enabled {
+			maxLen = cfg.Text.MaxLengthNoArt
 		}
 
-		if m.scrollPause > 0 {
-			m.scrollPause--
-		} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (300ms)
-			m.scrollOffset++
+		// Calculate the longest text length to determine if scrolling is needed
+		longestLen := len([]rune(m.songData.Title))
+		if l := len([]rune(m.songData.Artist)); l > longestLen {
+			longestLen = l
+		}
+		if l := len([]rune(m.songData.Album)); l > longestLen {
+			longestLen = l
+		}
 
-			// Check if we've completed a full loop - pause at the end
-			maxLen := cfg.Text.MaxLengthWithArt
-			if !m.supportsKitty || !cfg.Artwork.Enabled {
-				maxLen = cfg.Text.MaxLengthNoArt
-			}
+		// Only scroll if text is longer than max length
+		if longestLen > maxLen {
+			if m.scrollPause > 0 {
+				m.scrollPause--
+			} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (interval depends on adaptive tick rate)
+				m.scrollOffset++
 
-			// Calculate the longest text length to determine loop point
-			longestLen := len([]rune(m.songData.Title))
-			if l := len([]rune(m.songData.Artist)); l > longestLen {
-				longestLen = l
-			}
-			if l := len([]rune(m.songData.Album)); l > longestLen {
-				longestLen = l
-			}
-
-			if longestLen > maxLen {
+				// Check if we've completed a full loop - pause at the end
 				loopPoint := longestLen + 5 // Text length + separator length
 				if m.scrollOffset >= loopPoint {
 					m.scrollOffset = 0
-					m.scrollPause = 30 // Pause for 3 seconds when looping back
+					m.scrollPause = 30 // Pause for 30 ticks before restarting scroll (3s when playing, 15s when paused, 30s when idle)
 				}
 			}
+		} else {
+			// Text fits, no scrolling needed - reset offset
+			m.scrollOffset = 0
+			m.scrollPause = 0
 		}
-		// Schedule next tick immediately for consistent timing
-		return m, tickCmd()
+		// Schedule next tick with adaptive rate
+		return m, m.tickCmd()
 
 	case fetchMsg:
 		// Data fetch tick - get fresh data and schedule next fetch
@@ -420,17 +492,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Generate in background to avoid blocking the UI
 				if cfg.Artwork.VinylMode && trackID != m.vinylCacheTrackID {
 					m.vinylCacheTrackID = trackID
-					return m, generateVinylFramesCmd(msg.rawArtwork, trackID)
+					return m, generateVinylFramesCmd(msg.rawArtwork, trackID, cfg.Artwork.VinylFrames)
 				}
 			}
 		}
 		return m, nil
 
 	case vinylFramesMsg:
-		// Vinyl frames generated in background - store them if still relevant
-		if msg.trackID == m.vinylCacheTrackID {
+		// Vinyl frames generated in background - cache them if for current track
+		if msg.trackID == m.lastTrackID && len(msg.frames) > 0 {
 			m.vinylFrameCache = msg.frames
+			m.vinylCachedFrames = len(msg.frames) // Store frame count to detect config changes
+			// Start from frame 0
+			m.vinylRotation = 0
+			m.vinylAccumulator = 0
+			// Display first frame immediately
+			m.artworkEncoded = msg.frames[0]
 		}
+		return m, nil
+
+	case clearDeleteFlagMsg:
+		// Clear the flag after one render cycle
+		m.forceDeleteImg = false
 		return m, nil
 	}
 

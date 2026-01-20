@@ -107,6 +107,13 @@ func (m model) View() string {
 	// Combine artwork and text content
 	var topSection string
 	if m.artworkEncoded != "" && m.supportsKitty && cfg.Artwork.Enabled {
+		// If we need to force delete (e.g., after resize), send delete ALL command first
+		// Use d=A to delete all images, not just ID 42, to clear any stale placements
+		var deleteCmd string
+		if m.forceDeleteImg {
+			deleteCmd = "\033_Ga=d,d=A\033\\"
+		}
+
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
 			PaddingLeft(cfg.Artwork.Padding).
@@ -114,13 +121,12 @@ func (m model) View() string {
 
 		// Place image and padded text together
 		// (In vinyl mode, the image itself is rotated and cropped to circle)
-		topSection = m.artworkEncoded + paddedText
+		topSection = deleteCmd + m.artworkEncoded + paddedText
 	} else {
 		// No artwork - delete any existing image and show content without padding
 		if m.supportsKitty {
-			// Send delete command for the image
-			const imageID = 42
-			topSection = fmt.Sprintf("\033_Ga=d,d=I,i=%d\033\\", imageID) + textContent.String()
+			// Send delete command for all images
+			topSection = "\033_Ga=d,d=A\033\\" + textContent.String()
 		} else {
 			topSection = textContent.String()
 		}

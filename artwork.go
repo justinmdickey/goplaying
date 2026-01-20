@@ -269,7 +269,7 @@ func rotateImage(img image.Image, angleDegrees float64) image.Image {
 
 // Process and encode artwork for Kitty graphics protocol
 // If vinyl mode is enabled and rotationAngle > 0, rotates and crops to circle
-func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
+func encodeArtworkForKitty(img image.Image, rotationAngle int, frameCount int) (string, error) {
 	if img == nil {
 		return "", fmt.Errorf("nil image")
 	}
@@ -287,9 +287,10 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 		// Crop to circle first
 		processedImg = cropToCircle(processedImg)
 
-		// Rotate based on angle (0-89 maps to 0-356 degrees in 4° increments)
+		// Rotate based on angle - calculate degrees per frame dynamically
 		if rotationAngle > 0 {
-			angleDegrees := float64(rotationAngle) * 4.0
+			degreesPerFrame := 360.0 / float64(frameCount)
+			angleDegrees := float64(rotationAngle) * degreesPerFrame
 			processedImg = rotateImage(processedImg, angleDegrees)
 		}
 	}
@@ -348,7 +349,7 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 // processArtwork decodes artwork data once and returns both the extracted color and Kitty-encoded string
 // This is more efficient than calling extractDominantColor and encodeArtworkForKitty separately,
 // as it avoids decoding the image twice
-func processArtwork(artworkData []byte, extractColor bool, rotationAngle int) (color string, encoded string, err error) {
+func processArtwork(artworkData []byte, extractColor bool, rotationAngle int, frameCount int) (color string, encoded string, err error) {
 	// Decode the image once
 	img, err := decodeArtworkData(artworkData)
 	if err != nil {
@@ -363,7 +364,7 @@ func processArtwork(artworkData []byte, extractColor bool, rotationAngle int) (c
 	}
 
 	// Encode for Kitty protocol
-	if enc, err := encodeArtworkForKitty(img, rotationAngle); err == nil && enc != "" {
+	if enc, err := encodeArtworkForKitty(img, rotationAngle, frameCount); err == nil && enc != "" {
 		encoded = enc
 	}
 

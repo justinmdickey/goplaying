@@ -7,8 +7,9 @@ artwork:
   padding: 16
   width_pixels: 300   # Pixel width for resizing artwork (height maintains aspect ratio)
   width_columns: 14   # Terminal column width for display (larger = bigger artwork)
-  # vinyl_mode: true  # Spin artwork like a vinyl record (requires Kitty graphics protocol)
-  # vinyl_rpm: 10     # Rotation speed in RPM (revolutions per minute) - try 33.33 for classic vinyl, 45 for singles, or 10 for slow/dramatic
+  # vinyl_mode: true     # Spin artwork like a vinyl record (requires Kitty graphics protocol)
+  # vinyl_rpm: 10        # Rotation speed in RPM (revolutions per minute) - try 33.33 for classic vinyl, 45 for singles, or 10 for slow/dramatic
+  # vinyl_frames: 90     # Pre-rendered frame count: 90 (ultra-smooth, ~75MB) or 45 (smooth, ~37MB)
 text:
   max_length_with_art: 22
   max_length_no_art: 36
