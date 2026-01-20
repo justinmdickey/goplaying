@@ -24,10 +24,11 @@ This document tracks planned improvements, features, and known issues for goplay
 
 ### Reliability & Bug Fixes
 
-- [ ] **Fix config race condition** - Global config accessed by multiple goroutines without synchronization (Effort: M, Impact: High)
+- [x] **Fix config race condition** - Global config accessed by multiple goroutines without synchronization (Effort: M, Impact: High) ✅
   - Wrap in `sync.RWMutex` or use `atomic.Value`
   - Potential crashes on config reload
   - Files: `main.go`
+  - **Completed**: PR #32 merged, includes unit tests with race detector
 
 - [ ] **Improve MediaRemote failure handling (macOS)** - Single failure permanently disables better/faster method (Effort: S, Impact: Medium)
   - Add retry counter + time-based reset (retry after 5 min)
