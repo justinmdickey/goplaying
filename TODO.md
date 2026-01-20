@@ -35,10 +35,12 @@ This document tracks planned improvements, features, and known issues for goplay
   - Currently falls back to slower AppleScript permanently
   - Files: `media_darwin.go`
 
-- [ ] **Add config validation** - Prevent invalid config values causing runtime errors (Effort: M, Impact: High)
-  - Validate: negative values, padding > max_width, unreasonable refresh rates
-  - Show clear error messages on startup
-  - Files: `config.go`
+- [x] **Add config validation** - Prevent invalid config values causing runtime errors (Effort: M, Impact: High) ✅
+  - Validates all numeric ranges, color formats, and enum values
+  - Shows clear warnings on startup, applies safe defaults
+  - Rejects invalid configs during live reload (keeps previous valid config)
+  - Files: `config.go`, `config_test.go`
+  - **Completed**: PR #35 merged, comprehensive validation with 18+ test cases
 
 ---
 

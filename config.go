@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -56,6 +57,185 @@ func (sc *SafeConfig) Set(cfg Config) {
 }
 
 var config = &SafeConfig{}
+
+// Validation error types
+type configError struct {
+	field   string
+	message string
+}
+
+func (e configError) Error() string {
+	return fmt.Sprintf("%s: %s", e.field, e.message)
+}
+
+// isValidColor checks if a color string is valid (ANSI code or hex color)
+func isValidColor(color string) bool {
+	// Check for ANSI color codes (0-255)
+	if len(color) > 0 && len(color) <= 3 {
+		// Could be ANSI code like "1", "15", "255"
+		for _, c := range color {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		// Parse and check range
+		if num, err := strconv.Atoi(color); err == nil && num >= 0 && num <= 255 {
+			return true
+		}
+		return false
+	}
+
+	// Check for hex color (#RRGGBB or #RGB)
+	if len(color) == 7 || len(color) == 4 {
+		if color[0] != '#' {
+			return false
+		}
+		for i := 1; i < len(color); i++ {
+			c := color[i]
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+		return true
+	}
+
+	return false
+}
+
+// validateConfig validates all configuration values and returns a list of errors
+func validateConfig(cfg *Config) []error {
+	var errors []error
+
+	// UI validation
+	if cfg.UI.MaxWidth < 20 {
+		errors = append(errors, configError{
+			field:   "ui.max_width",
+			message: fmt.Sprintf("must be >= 20 (got %d)", cfg.UI.MaxWidth),
+		})
+	}
+
+	if cfg.UI.ColorMode != "manual" && cfg.UI.ColorMode != "auto" {
+		errors = append(errors, configError{
+			field:   "ui.color_mode",
+			message: fmt.Sprintf("must be 'manual' or 'auto' (got '%s')", cfg.UI.ColorMode),
+		})
+	}
+
+	if !isValidColor(cfg.UI.Color) {
+		errors = append(errors, configError{
+			field:   "ui.color",
+			message: fmt.Sprintf("must be valid ANSI code (0-255) or hex color (#RRGGBB) (got '%s')", cfg.UI.Color),
+		})
+	}
+
+	// Artwork validation
+	if cfg.Artwork.Padding < 0 {
+		errors = append(errors, configError{
+			field:   "artwork.padding",
+			message: fmt.Sprintf("must be >= 0 (got %d)", cfg.Artwork.Padding),
+		})
+	}
+
+	if cfg.Artwork.Padding >= cfg.UI.MaxWidth {
+		errors = append(errors, configError{
+			field:   "artwork.padding",
+			message: fmt.Sprintf("must be < ui.max_width (%d >= %d)", cfg.Artwork.Padding, cfg.UI.MaxWidth),
+		})
+	}
+
+	if cfg.Artwork.WidthPixels <= 0 || cfg.Artwork.WidthPixels > 10000 {
+		errors = append(errors, configError{
+			field:   "artwork.width_pixels",
+			message: fmt.Sprintf("must be > 0 and <= 10000 (got %d)", cfg.Artwork.WidthPixels),
+		})
+	}
+
+	if cfg.Artwork.WidthColumns <= 0 || cfg.Artwork.WidthColumns > 100 {
+		errors = append(errors, configError{
+			field:   "artwork.width_columns",
+			message: fmt.Sprintf("must be > 0 and <= 100 (got %d)", cfg.Artwork.WidthColumns),
+		})
+	}
+
+	// Text validation
+	if cfg.Text.MaxLengthWithArt <= 0 || cfg.Text.MaxLengthWithArt > 200 {
+		errors = append(errors, configError{
+			field:   "text.max_length_with_art",
+			message: fmt.Sprintf("must be > 0 and <= 200 (got %d)", cfg.Text.MaxLengthWithArt),
+		})
+	}
+
+	if cfg.Text.MaxLengthNoArt <= 0 || cfg.Text.MaxLengthNoArt > 200 {
+		errors = append(errors, configError{
+			field:   "text.max_length_no_art",
+			message: fmt.Sprintf("must be > 0 and <= 200 (got %d)", cfg.Text.MaxLengthNoArt),
+		})
+	}
+
+	// Timing validation
+	if cfg.Timing.UIRefreshMs < 10 || cfg.Timing.UIRefreshMs > 5000 {
+		errors = append(errors, configError{
+			field:   "timing.ui_refresh_ms",
+			message: fmt.Sprintf("must be >= 10 and <= 5000 (got %d)", cfg.Timing.UIRefreshMs),
+		})
+	}
+
+	if cfg.Timing.DataFetchMs < 100 || cfg.Timing.DataFetchMs > 60000 {
+		errors = append(errors, configError{
+			field:   "timing.data_fetch_ms",
+			message: fmt.Sprintf("must be >= 100 and <= 60000 (got %d)", cfg.Timing.DataFetchMs),
+		})
+	}
+
+	return errors
+}
+
+// applyDefaultsForInvalidFields fixes invalid config values with defaults
+func applyDefaultsForInvalidFields(cfg *Config, errors []error) {
+	for _, err := range errors {
+		configErr, ok := err.(configError)
+		if !ok {
+			continue
+		}
+
+		switch configErr.field {
+		case "ui.max_width":
+			cfg.UI.MaxWidth = 45
+		case "ui.color_mode":
+			cfg.UI.ColorMode = "manual"
+		case "ui.color":
+			cfg.UI.Color = "2"
+		case "artwork.padding":
+			cfg.Artwork.Padding = 15
+		case "artwork.width_pixels":
+			cfg.Artwork.WidthPixels = 300
+		case "artwork.width_columns":
+			cfg.Artwork.WidthColumns = 13
+		case "text.max_length_with_art":
+			cfg.Text.MaxLengthWithArt = 22
+		case "text.max_length_no_art":
+			cfg.Text.MaxLengthNoArt = 36
+		case "timing.ui_refresh_ms":
+			cfg.Timing.UIRefreshMs = 100
+		case "timing.data_fetch_ms":
+			cfg.Timing.DataFetchMs = 1000
+		}
+	}
+}
+
+// printConfigWarnings prints validation errors to stderr with helpful formatting
+func printConfigWarnings(errors []error) {
+	if len(errors) == 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "\n⚠️  Configuration validation warnings:\n")
+	for _, err := range errors {
+		fmt.Fprintf(os.Stderr, "   • %s\n", err.Error())
+	}
+	fmt.Fprintf(os.Stderr, "   → Using default values for invalid settings\n")
+	fmt.Fprintf(os.Stderr, "   → Check ~/.config/goplaying/config.yaml\n\n")
+}
 
 // Config file changed notification
 type configReloadMsg struct{}
@@ -127,12 +307,27 @@ func initConfig() {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Error parsing config: %v\n", err)
 	}
+
+	// Validate configuration and fix invalid values
+	if validationErrors := validateConfig(&cfg); len(validationErrors) > 0 {
+		printConfigWarnings(validationErrors)
+		applyDefaultsForInvalidFields(&cfg, validationErrors)
+	}
+
 	config.Set(cfg)
 
 	// Watch for config file changes and live reload
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		var newCfg Config
 		if err := viper.Unmarshal(&newCfg); err == nil {
+			// Validate the new config
+			if validationErrors := validateConfig(&newCfg); len(validationErrors) > 0 {
+				// Invalid config - silently keep old config
+				// Don't print to stderr during TUI operation as it corrupts the display
+				return
+			}
+
+			// Valid config - apply it
 			config.Set(newCfg)
 			// Config reloaded successfully, notify the app
 			select {
