@@ -133,7 +133,7 @@ func TestValidateConfig(t *testing.T) {
 		cfg.Artwork.WidthPixels = 300
 		cfg.Artwork.WidthColumns = 13
 		cfg.Artwork.VinylRPM = 33.33
-		cfg.Artwork.VinylRPM = 33.33
+		cfg.Artwork.VinylFrames = 90
 		cfg.Text.MaxLengthWithArt = 22
 		cfg.Text.MaxLengthNoArt = 36
 		cfg.Timing.UIRefreshMs = 100

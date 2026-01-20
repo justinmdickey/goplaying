@@ -1,10 +1,17 @@
 .PHONY: all clean darwin linux helper fmt lint test
 
+# Build flags for optimized binaries
+LDFLAGS := -ldflags="-s -w"
+
 all: goplaying
 
-# Build the main binary
+# Build the main binary (optimized)
 goplaying:
-	go build -o goplaying
+	go build $(LDFLAGS) -o goplaying
+
+# Build unoptimized binary with debug symbols (for development)
+goplaying-debug:
+	go build -o goplaying-debug
 
 # Format code
 fmt:

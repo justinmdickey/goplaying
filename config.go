@@ -25,8 +25,9 @@ type Config struct {
 		Padding      int     `mapstructure:"padding"`
 		WidthPixels  int     `mapstructure:"width_pixels"`
 		WidthColumns int     `mapstructure:"width_columns"`
-		VinylMode    bool    `mapstructure:"vinyl_mode"` // Easter egg: spinning vinyl record animation
-		VinylRPM     float64 `mapstructure:"vinyl_rpm"`  // Rotation speed in RPM (revolutions per minute)
+		VinylMode    bool    `mapstructure:"vinyl_mode"`
+		VinylRPM     float64 `mapstructure:"vinyl_rpm"`
+		VinylFrames  int     `mapstructure:"vinyl_frames"` // Number of pre-rendered frames (45 or 90)
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
@@ -166,6 +167,13 @@ func validateConfig(cfg *Config) []error {
 		})
 	}
 
+	if cfg.Artwork.VinylFrames != 45 && cfg.Artwork.VinylFrames != 90 {
+		errors = append(errors, configError{
+			field:   "artwork.vinyl_frames",
+			message: fmt.Sprintf("must be 45 or 90 (got %d)", cfg.Artwork.VinylFrames),
+		})
+	}
+
 	// Text validation
 	if cfg.Text.MaxLengthWithArt <= 0 || cfg.Text.MaxLengthWithArt > 200 {
 		errors = append(errors, configError{
@@ -222,6 +230,8 @@ func applyDefaultsForInvalidFields(cfg *Config, errors []error) {
 			cfg.Artwork.WidthColumns = 14
 		case "artwork.vinyl_rpm":
 			cfg.Artwork.VinylRPM = 10.0
+		case "artwork.vinyl_frames":
+			cfg.Artwork.VinylFrames = 90
 		case "text.max_length_with_art":
 			cfg.Text.MaxLengthWithArt = 22
 		case "text.max_length_no_art":
@@ -272,6 +282,7 @@ func initConfig() {
 	viper.SetDefault("artwork.width_columns", 14)
 	viper.SetDefault("artwork.vinyl_mode", false) // Disabled by default - see config.example.yaml
 	viper.SetDefault("artwork.vinyl_rpm", 10.0)   // Slow, dramatic spin when enabled
+	viper.SetDefault("artwork.vinyl_frames", 90)  // Ultra-smooth (use 45 for half memory)
 	viper.SetDefault("text.max_length_with_art", 22)
 	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)
