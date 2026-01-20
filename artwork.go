@@ -186,7 +186,8 @@ func supportsKittyGraphics() bool {
 }
 
 // Process and encode artwork for Kitty graphics protocol
-func encodeArtworkForKitty(img image.Image) (string, error) {
+// If vinyl mode is enabled, adds rotation effect metadata
+func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 	if img == nil {
 		return "", fmt.Errorf("nil image")
 	}
@@ -248,7 +249,7 @@ func encodeArtworkForKitty(img image.Image) (string, error) {
 // processArtwork decodes artwork data once and returns both the extracted color and Kitty-encoded string
 // This is more efficient than calling extractDominantColor and encodeArtworkForKitty separately,
 // as it avoids decoding the image twice
-func processArtwork(artworkData []byte, extractColor bool) (color string, encoded string, err error) {
+func processArtwork(artworkData []byte, extractColor bool, rotationAngle int) (color string, encoded string, err error) {
 	// Decode the image once
 	img, err := decodeArtworkData(artworkData)
 	if err != nil {
@@ -263,7 +264,7 @@ func processArtwork(artworkData []byte, extractColor bool) (color string, encode
 	}
 
 	// Encode for Kitty protocol
-	if enc, err := encodeArtworkForKitty(img); err == nil && enc != "" {
+	if enc, err := encodeArtworkForKitty(img, rotationAngle); err == nil && enc != "" {
 		encoded = enc
 	}
 

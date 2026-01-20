@@ -38,6 +38,9 @@ type model struct {
 	supportsKitty  bool   // Whether terminal supports Kitty graphics
 	lastTrackID    string // Track ID for caching artwork (title+artist)
 
+	// Vinyl record animation (easter egg)
+	vinylRotation int // Current rotation angle (0-7) for spinning record effect
+
 	// Text scrolling state
 	scrollOffset int // Current scroll position for text animation
 	scrollPause  int // Pause counter at start/end of scroll
@@ -119,6 +122,7 @@ func (m model) fetchSongData() tea.Cmd {
 
 					// Process artwork once (decode, extract color, encode for Kitty)
 					// This is more efficient than decoding twice
+					// Pass rotation angle for vinyl mode (will be 0 for normal mode)
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
@@ -127,7 +131,7 @@ func (m model) fetchSongData() tea.Cmd {
 								extractedColor = ""
 							}
 						}()
-						color, encoded, err := processArtwork(artworkData, shouldExtractColor)
+						color, encoded, err := processArtwork(artworkData, shouldExtractColor, m.vinylRotation)
 						if err == nil {
 							if shouldExtractColor && color != "" {
 								extractedColor = color
@@ -250,6 +254,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// UI refresh tick - advance scroll animation slowly
 		m.scrollTick++
 		cfg := config.Get()
+
+		// Vinyl mode: rotate artwork when playing
+		if cfg.Artwork.VinylMode && m.isPlaying {
+			m.vinylRotation = (m.vinylRotation + 1) % 8 // 8 rotation frames
+		}
 
 		if m.scrollPause > 0 {
 			m.scrollPause--

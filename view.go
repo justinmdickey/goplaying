@@ -7,6 +7,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// getVinylSpinner returns a spinning character based on rotation angle (0-7)
+// These create the illusion of a vinyl record spinning
+func getVinylSpinner(rotation int) string {
+	// Use braille patterns or other Unicode characters for rotation effect
+	spinners := []string{"⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"}
+	return spinners[rotation%len(spinners)]
+}
+
 func (m model) View() string {
 	// Get config snapshot for rendering
 	cfg := config.Get()
@@ -107,13 +115,22 @@ func (m model) View() string {
 	// Combine artwork and text content
 	var topSection string
 	if m.artworkEncoded != "" && m.supportsKitty && cfg.Artwork.Enabled {
+		// Add vinyl spinning effect if enabled (easter egg)
+		artworkDisplay := m.artworkEncoded
+		if cfg.Artwork.VinylMode {
+			// Add spinning indicator overlay
+			spinner := getVinylSpinner(m.vinylRotation)
+			vinylLabel := highlight.Render(fmt.Sprintf(" %s 33⅓ RPM ", spinner))
+			artworkDisplay = m.artworkEncoded + "\n" + vinylLabel
+		}
+
 		// Add padding to the left of text to make room for the image
 		paddedText := lipgloss.NewStyle().
 			PaddingLeft(cfg.Artwork.Padding).
 			Render(textContent.String())
 
 		// Place image and padded text together
-		topSection = m.artworkEncoded + paddedText
+		topSection = artworkDisplay + paddedText
 	} else {
 		// No artwork - delete any existing image and show content without padding
 		if m.supportsKitty {

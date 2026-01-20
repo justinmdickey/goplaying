@@ -25,6 +25,7 @@ type Config struct {
 		Padding      int  `mapstructure:"padding"`
 		WidthPixels  int  `mapstructure:"width_pixels"`
 		WidthColumns int  `mapstructure:"width_columns"`
+		VinylMode    bool `mapstructure:"vinyl_mode"` // Easter egg: spinning vinyl record animation
 	} `mapstructure:"artwork"`
 	Text struct {
 		MaxLengthWithArt int `mapstructure:"max_length_with_art"`
@@ -259,6 +260,7 @@ func initConfig() {
 	viper.SetDefault("artwork.padding", 15)
 	viper.SetDefault("artwork.width_pixels", 300)
 	viper.SetDefault("artwork.width_columns", 13)
+	viper.SetDefault("artwork.vinyl_mode", false) // Easter egg - not in example config
 	viper.SetDefault("text.max_length_with_art", 22)
 	viper.SetDefault("text.max_length_no_art", 36)
 	viper.SetDefault("timing.ui_refresh_ms", 100)

@@ -120,7 +120,7 @@ func TestEncodeArtworkForKitty(t *testing.T) {
 
 	t.Run("valid image", func(t *testing.T) {
 		img := generateTestImage(50, 50, color.RGBA{100, 150, 200, 255})
-		encoded, err := encodeArtworkForKitty(img)
+		encoded, err := encodeArtworkForKitty(img, 0)
 		assertNoError(t, err)
 
 		if encoded == "" {
@@ -134,7 +134,7 @@ func TestEncodeArtworkForKitty(t *testing.T) {
 	})
 
 	t.Run("nil image", func(t *testing.T) {
-		_, err := encodeArtworkForKitty(nil)
+		_, err := encodeArtworkForKitty(nil, 0)
 		if err == nil {
 			t.Error("Expected error for nil image")
 		}
@@ -143,7 +143,7 @@ func TestEncodeArtworkForKitty(t *testing.T) {
 	t.Run("large image chunks", func(t *testing.T) {
 		// Large image that should trigger chunking
 		img := generateTestImage(800, 800, color.RGBA{100, 150, 200, 255})
-		encoded, err := encodeArtworkForKitty(img)
+		encoded, err := encodeArtworkForKitty(img, 0)
 		assertNoError(t, err)
 
 		if encoded == "" {
@@ -176,7 +176,7 @@ func TestProcessArtwork(t *testing.T) {
 	imageData := buf.Bytes()
 
 	t.Run("with color extraction", func(t *testing.T) {
-		color, encoded, err := processArtwork(imageData, true)
+		color, encoded, err := processArtwork(imageData, true, 0)
 		assertNoError(t, err)
 
 		if !isValidHexColor(color) {
@@ -189,7 +189,7 @@ func TestProcessArtwork(t *testing.T) {
 	})
 
 	t.Run("without color extraction", func(t *testing.T) {
-		color, encoded, err := processArtwork(imageData, false)
+		color, encoded, err := processArtwork(imageData, false, 0)
 		assertNoError(t, err)
 
 		if color != "" {
@@ -203,7 +203,7 @@ func TestProcessArtwork(t *testing.T) {
 
 	t.Run("base64 input", func(t *testing.T) {
 		base64Data := base64.StdEncoding.EncodeToString(imageData)
-		color, encoded, err := processArtwork([]byte(base64Data), true)
+		color, encoded, err := processArtwork([]byte(base64Data), true, 0)
 		assertNoError(t, err)
 
 		if !isValidHexColor(color) {
@@ -216,14 +216,14 @@ func TestProcessArtwork(t *testing.T) {
 	})
 
 	t.Run("invalid data", func(t *testing.T) {
-		_, _, err := processArtwork([]byte("not an image"), true)
+		_, _, err := processArtwork([]byte("not an image"), true, 0)
 		if err == nil {
 			t.Error("Expected error for invalid data")
 		}
 	})
 
 	t.Run("empty data", func(t *testing.T) {
-		_, _, err := processArtwork([]byte{}, true)
+		_, _, err := processArtwork([]byte{}, true, 0)
 		if err == nil {
 			t.Error("Expected error for empty data")
 		}
@@ -292,7 +292,7 @@ func BenchmarkEncodeArtworkForKitty(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encodeArtworkForKitty(img)
+		encodeArtworkForKitty(img, 0)
 	}
 }
 
@@ -313,14 +313,14 @@ func BenchmarkProcessArtwork(b *testing.B) {
 	b.Run("with color extraction", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processArtwork(imageData, true)
+			processArtwork(imageData, true, 0)
 		}
 	})
 
 	b.Run("without color extraction", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processArtwork(imageData, false)
+			processArtwork(imageData, false, 0)
 		}
 	})
 }
