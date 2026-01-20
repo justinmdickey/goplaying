@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -37,6 +38,7 @@ type model struct {
 	artworkEncoded string // Kitty protocol-encoded artwork for display
 	supportsKitty  bool   // Whether terminal supports Kitty graphics
 	lastTrackID    string // Track ID for caching artwork (title+artist)
+	rawArtworkData []byte // Raw artwork data for vinyl rotation re-encoding
 
 	// Vinyl record animation (easter egg)
 	vinylRotation int // Current rotation angle (0-7) for spinning record effect
@@ -58,15 +60,16 @@ type fetchMsg time.Time
 
 // Result of fetching song data from media controller
 type songDataMsg struct {
-	title    string
-	artist   string
-	album    string
-	status   string
-	duration int64
-	position float64
-	artwork  string // Kitty-encoded artwork
-	color    string // Extracted dominant color
-	err      error
+	title      string
+	artist     string
+	album      string
+	status     string
+	duration   int64
+	position   float64
+	artwork    string // Kitty-encoded artwork
+	rawArtwork []byte // Raw artwork data for vinyl re-encoding
+	color      string // Extracted dominant color
+	err        error
 }
 
 // Schedule next UI refresh tick
@@ -109,14 +112,19 @@ func (m model) fetchSongData() tea.Cmd {
 		// Fetch artwork if Kitty protocol is supported
 		var artworkEncoded string
 		var extractedColor string
+		var rawArtwork []byte
 		if m.supportsKitty && cfg.Artwork.Enabled {
 			// Create track ID for caching
 			trackID := fmt.Sprintf("%s|%s", title, artist)
 
-			// Only fetch artwork if track changed or first load
-			if trackID != m.lastTrackID || m.lastTrackID == "" {
-				artworkData, err := m.mediaController.GetArtwork()
-				if err == nil && len(artworkData) > 0 {
+			// Fetch artwork data
+			artworkData, err := m.mediaController.GetArtwork()
+			if err == nil && len(artworkData) > 0 {
+				// Always store raw artwork for vinyl mode
+				rawArtwork = artworkData
+
+				// Only re-process if track changed (expensive operation)
+				if trackID != m.lastTrackID || m.lastTrackID == "" {
 					// Determine if we need color extraction
 					shouldExtractColor := cfg.UI.ColorMode == "auto"
 
@@ -146,14 +154,15 @@ func (m model) fetchSongData() tea.Cmd {
 		}
 
 		return songDataMsg{
-			title:    title,
-			artist:   artist,
-			album:    album,
-			status:   status,
-			duration: duration,
-			position: position,
-			artwork:  artworkEncoded,
-			color:    extractedColor,
+			title:      title,
+			artist:     artist,
+			album:      album,
+			status:     status,
+			duration:   duration,
+			position:   position,
+			artwork:    artworkEncoded,
+			rawArtwork: rawArtwork,
+			color:      extractedColor,
 		}
 	}
 }
@@ -256,8 +265,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cfg := config.Get()
 
 		// Vinyl mode: rotate artwork when playing
-		if cfg.Artwork.VinylMode && m.isPlaying {
+		if cfg.Artwork.VinylMode && m.isPlaying && len(m.rawArtworkData) > 0 {
 			m.vinylRotation = (m.vinylRotation + 1) % 8 // 8 rotation frames
+
+			// Re-encode artwork with new rotation angle
+			// This is expensive but necessary for smooth animation
+			if _, encoded, err := processArtwork(m.rawArtworkData, false, m.vinylRotation); err == nil && encoded != "" {
+				m.artworkEncoded = encoded
+			}
 		}
 
 		if m.scrollPause > 0 {
@@ -331,13 +346,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastPosition = msg.position
 			m.lastPositionTime = time.Now()
 			m.duration = msg.duration
-			m.isPlaying = (msg.status == "playing")
+			m.isPlaying = (strings.ToLower(msg.status) == "playing")
 			m.lastError = nil
 
 			// Update artwork if changed
 			if msg.artwork != "" {
 				m.artworkEncoded = msg.artwork
 				m.lastTrackID = fmt.Sprintf("%s|%s", msg.title, msg.artist)
+			}
+
+			// Store raw artwork data for vinyl mode re-encoding
+			if len(msg.rawArtwork) > 0 {
+				m.rawArtworkData = msg.rawArtwork
 			}
 		}
 		return m, nil

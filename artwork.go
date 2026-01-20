@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"strings"
 
@@ -185,8 +187,88 @@ func supportsKittyGraphics() bool {
 	return false
 }
 
+// cropToCircle crops an image to a circle with transparent corners
+func cropToCircle(img image.Image) image.Image {
+	bounds := img.Bounds()
+	size := bounds.Dx()
+	if bounds.Dy() < size {
+		size = bounds.Dy()
+	}
+
+	// Create a new RGBA image
+	circle := image.NewRGBA(image.Rect(0, 0, size, size))
+
+	// Calculate center and radius
+	centerX := float64(size) / 2
+	centerY := float64(size) / 2
+	radius := float64(size) / 2
+
+	// Copy pixels within circle, make corners transparent
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			// Calculate distance from center
+			dx := float64(x) - centerX
+			dy := float64(y) - centerY
+			distance := math.Sqrt(dx*dx + dy*dy)
+
+			if distance <= radius {
+				// Inside circle - copy pixel from source
+				srcX := bounds.Min.X + x
+				srcY := bounds.Min.Y + y
+				circle.Set(x, y, img.At(srcX, srcY))
+			} else {
+				// Outside circle - transparent
+				circle.Set(x, y, color.Transparent)
+			}
+		}
+	}
+
+	return circle
+}
+
+// rotateImage rotates an image by the given angle (in degrees)
+func rotateImage(img image.Image, angleDegrees float64) image.Image {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Create new image for rotated result
+	rotated := image.NewRGBA(bounds)
+
+	// Convert angle to radians
+	angleRad := angleDegrees * math.Pi / 180.0
+	cosAngle := math.Cos(angleRad)
+	sinAngle := math.Sin(angleRad)
+
+	// Center of rotation
+	centerX := float64(width) / 2
+	centerY := float64(height) / 2
+
+	// Rotate each pixel
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			// Translate to origin
+			tx := float64(x) - centerX
+			ty := float64(y) - centerY
+
+			// Rotate (reverse rotation for sampling)
+			srcX := tx*cosAngle + ty*sinAngle + centerX
+			srcY := -tx*sinAngle + ty*cosAngle + centerY
+
+			// Sample from source image
+			if srcX >= 0 && srcX < float64(width) && srcY >= 0 && srcY < float64(height) {
+				rotated.Set(x, y, img.At(int(srcX), int(srcY)))
+			} else {
+				rotated.Set(x, y, color.Transparent)
+			}
+		}
+	}
+
+	return rotated
+}
+
 // Process and encode artwork for Kitty graphics protocol
-// If vinyl mode is enabled, adds rotation effect metadata
+// If vinyl mode is enabled and rotationAngle > 0, rotates and crops to circle
 func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 	if img == nil {
 		return "", fmt.Errorf("nil image")
@@ -199,9 +281,22 @@ func encodeArtworkForKitty(img image.Image, rotationAngle int) (string, error) {
 	// We'll let Kitty handle the final sizing based on cell dimensions
 	resized := resize.Resize(uint(cfg.Artwork.WidthPixels), 0, img, resize.Lanczos3)
 
+	// Apply vinyl effects if enabled
+	processedImg := resized
+	if cfg.Artwork.VinylMode {
+		// Crop to circle first
+		processedImg = cropToCircle(processedImg)
+
+		// Rotate based on angle (0-7 maps to 0-315 degrees in 45° increments)
+		if rotationAngle > 0 {
+			angleDegrees := float64(rotationAngle) * 45.0
+			processedImg = rotateImage(processedImg, angleDegrees)
+		}
+	}
+
 	// Encode as PNG
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, resized); err != nil {
+	if err := png.Encode(&buf, processedImg); err != nil {
 		return "", fmt.Errorf("failed to encode PNG: %w", err)
 	}
 
