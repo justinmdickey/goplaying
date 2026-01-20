@@ -759,15 +759,18 @@ func (m model) View() string {
 	// Build help text - either full help or hint to press ?
 	var helpText string
 	if m.showHelp {
-		helpText = lipgloss.JoinHorizontal(
-			lipgloss.Center,
-			"Play/Pause: "+highlight.Render("p"),
-			"  Next: "+highlight.Render("n"),
-			"  Previous: "+highlight.Render("b"),
-			"  Toggle Art: "+highlight.Render("a"),
-			"  Quit: "+highlight.Render("q"),
-			"  Hide: "+highlight.Render("?"),
-		)
+		helpText = lipgloss.NewStyle().
+			Width(config.UI.MaxWidth).
+			Align(lipgloss.Center).
+			Render(lipgloss.JoinHorizontal(
+				lipgloss.Center,
+				"Play/Pause: "+highlight.Render("p"),
+				"  Next: "+highlight.Render("n"),
+				"  Previous: "+highlight.Render("b"),
+				"  Toggle Art: "+highlight.Render("a"),
+				"  Quit: "+highlight.Render("q"),
+				"  Hide: "+highlight.Render("?"),
+			))
 	} else {
 		helpText = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
