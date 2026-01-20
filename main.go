@@ -507,6 +507,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.lastError = err
 			}
 			return m, m.fetchSongData()
+		case "a":
+			// Toggle artwork on/off
+			config.Artwork.Enabled = !config.Artwork.Enabled
+			if !config.Artwork.Enabled {
+				// Clear artwork when disabling
+				m.artworkEncoded = ""
+			} else if m.supportsKitty {
+				// Re-fetch artwork when enabling
+				m.lastTrackID = "" // Clear track ID to force artwork fetch
+				return m, m.fetchSongData()
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -742,6 +754,7 @@ func (m model) View() string {
 		"Play/Pause: "+highlight.Render("p"),
 		"  Next: "+highlight.Render("n"),
 		"  Previous: "+highlight.Render("b"),
+		"  Toggle Art: "+highlight.Render("a"),
 		"  Quit: "+highlight.Render("q"),
 	)
 

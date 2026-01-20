@@ -166,6 +166,7 @@ The controls are basic vim keybinds:
 - `p` - Play/Pause
 - `n` - Next
 - `b` - Previous
+- `a` - Toggle album artwork
 - `q` - Quit
 
 ## License
