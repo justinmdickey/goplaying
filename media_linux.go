@@ -28,7 +28,7 @@ func (p *PlayerctlController) GetMetadata() (title, artist, album, status string
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return "", "", "", "", errors.New("can't get metadata")
+		return "", "", "", "", fmt.Errorf("playerctl metadata failed: %w", err)
 	}
 
 	output := strings.TrimSpace(out.String())
@@ -38,7 +38,7 @@ func (p *PlayerctlController) GetMetadata() (title, artist, album, status string
 
 	parts := strings.Split(output, "|")
 	if len(parts) != 4 {
-		return "", "", "", "", errors.New("unexpected metadata format")
+		return "", "", "", "", fmt.Errorf("unexpected metadata format: got %d parts, expected 4", len(parts))
 	}
 
 	return strings.TrimSpace(parts[0]),
@@ -53,13 +53,13 @@ func (p *PlayerctlController) GetDuration() (int64, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return 0, errors.New("can't get duration")
+		return 0, fmt.Errorf("playerctl duration failed: %w", err)
 	}
 
 	var duration int64
 	n, err := fmt.Sscanf(strings.TrimSpace(out.String()), "%d", &duration)
 	if n != 1 || err != nil {
-		return 0, errors.New("failed to parse duration")
+		return 0, fmt.Errorf("failed to parse duration: %w", err)
 	}
 	// Convert from microseconds to seconds
 	duration = duration / 1e6
@@ -72,20 +72,23 @@ func (p *PlayerctlController) GetPosition() (float64, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return 0, errors.New("can't get position")
+		return 0, fmt.Errorf("playerctl position failed: %w", err)
 	}
 
 	var position float64
 	n, err := fmt.Sscanf(strings.TrimSpace(out.String()), "%f", &position)
 	if n != 1 || err != nil {
-		return 0, errors.New("failed to parse position")
+		return 0, fmt.Errorf("failed to parse position: %w", err)
 	}
 
 	return position, nil
 }
 
 func (p *PlayerctlController) Control(command string) error {
-	return exec.Command("playerctl", command).Run()
+	if err := exec.Command("playerctl", command).Run(); err != nil {
+		return fmt.Errorf("playerctl %s failed: %w", command, err)
+	}
+	return nil
 }
 
 func (p *PlayerctlController) GetArtwork() ([]byte, error) {
@@ -94,7 +97,7 @@ func (p *PlayerctlController) GetArtwork() ([]byte, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return nil, errors.New("can't get artwork URL")
+		return nil, fmt.Errorf("playerctl artwork metadata failed: %w", err)
 	}
 
 	artUrl := strings.TrimSpace(out.String())

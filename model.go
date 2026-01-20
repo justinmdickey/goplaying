@@ -8,6 +8,19 @@ import (
 	"github.com/charmbracelet/bubbletea"
 )
 
+const (
+	// UI timing constants for adaptive tick rates
+	tickRatePlaying = 100 * time.Millisecond  // Smooth animations and progress
+	tickRatePaused  = 500 * time.Millisecond  // Reduced frequency when paused
+	tickRateIdle    = 1000 * time.Millisecond // Minimal updates when idle
+
+	// Text scrolling constants
+	scrollInterval     = 3  // Scroll every 3rd tick
+	scrollPauseTicks   = 30 // Pause duration at start/end of scroll (in ticks)
+	scrollSeparator    = "  •  "
+	scrollSeparatorLen = 5 // Length of "  •  " in runes
+)
+
 // SongData holds the current track metadata
 type SongData struct {
 	Status      string
@@ -97,10 +110,10 @@ func (m model) tickCmd() tea.Cmd {
 	// Adaptive tick rate based on playback state
 	if m.lastError != nil {
 		// Idle/Error state: slowest rate
-		tickRate = 1000 * time.Millisecond
+		tickRate = tickRateIdle
 	} else if !m.isPlaying {
 		// Paused: medium rate (still need scrolling)
-		tickRate = 500 * time.Millisecond
+		tickRate = tickRatePaused
 	}
 	// Playing: use configured rate (default 100ms)
 
@@ -412,14 +425,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if longestLen > maxLen {
 			if m.scrollPause > 0 {
 				m.scrollPause--
-			} else if m.scrollTick%3 == 0 { // Scroll every 3rd tick (interval depends on adaptive tick rate)
+			} else if m.scrollTick%scrollInterval == 0 { // Scroll every 3rd tick (interval depends on adaptive tick rate)
 				m.scrollOffset++
 
 				// Check if we've completed a full loop - pause at the end
-				loopPoint := longestLen + 5 // Text length + separator length
+				loopPoint := longestLen + scrollSeparatorLen // Text length + separator length (" • ")
 				if m.scrollOffset >= loopPoint {
 					m.scrollOffset = 0
-					m.scrollPause = 30 // Pause for 30 ticks before restarting scroll (3s when playing, 15s when paused, 30s when idle)
+					m.scrollPause = scrollPauseTicks // Pause for 30 ticks before restarting scroll (3s when playing, 15s when paused, 30s when idle)
 				}
 			}
 		} else {
@@ -450,7 +463,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			trackID := fmt.Sprintf("%s|%s", msg.title, msg.artist)
 			if trackID != m.lastTrackID {
 				m.scrollOffset = 0
-				m.scrollPause = 30 // Pause at start for 3 seconds
+				m.scrollPause = scrollPauseTicks // Pause at start (duration depends on adaptive tick rate)
 				m.scrollTick = 0
 
 				// Clear vinyl cache immediately so old artwork doesn't keep spinning

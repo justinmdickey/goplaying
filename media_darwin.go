@@ -64,9 +64,9 @@ func (h *HybridController) runAppleScript(script string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		// Include stderr in error for better debugging
 		if errOut.Len() > 0 {
-			return "", fmt.Errorf("%v: %s", err, errOut.String())
+			return "", fmt.Errorf("osascript failed: %w (%s)", err, errOut.String())
 		}
-		return "", err
+		return "", fmt.Errorf("osascript failed: %w", err)
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -112,9 +112,9 @@ func (h *HybridController) runHelper(args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		// Include stderr in error message for debugging
 		if errOut.Len() > 0 {
-			return "", fmt.Errorf("%v: %s", err, errOut.String())
+			return "", fmt.Errorf("helper execution failed: %w (%s)", err, errOut.String())
 		}
-		return "", err
+		return "", fmt.Errorf("helper execution failed: %w", err)
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -177,12 +177,12 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 
 	output, scriptErr := h.runAppleScript(script)
 	if scriptErr != nil {
-		return "", "", "", "", errors.New("no song playing")
+		return "", "", "", "", fmt.Errorf("AppleScript metadata failed: %w", scriptErr)
 	}
 
 	parts := strings.Split(output, "|")
 	if len(parts) < 6 {
-		return "", "", "", "", errors.New("unexpected metadata format")
+		return "", "", "", "", fmt.Errorf("unexpected metadata format: got %d parts, expected 6", len(parts))
 	}
 
 	// Cache duration and position for GetDuration() and GetPosition() calls

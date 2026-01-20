@@ -16,7 +16,7 @@ func scrollText(text string, max int, offset int) string {
 		return text
 	}
 
-	// Add padding for smooth loop
+	// Add padding for smooth loop (matches scrollSeparator from model.go: "  •  ")
 	fullText := append(runes, []rune("  •  ")...)
 	textLen := len(fullText)
 
