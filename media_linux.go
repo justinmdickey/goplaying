@@ -28,7 +28,9 @@ func (p *PlayerctlController) GetMetadata() (title, artist, album, status string
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return "", "", "", "", fmt.Errorf("playerctl metadata failed: %w", err)
+		// When no player is running or nothing is playing, return friendly error
+		// that matches the "nothing playing" check in view.go
+		return "", "", "", "", errors.New("no song playing")
 	}
 
 	output := strings.TrimSpace(out.String())
@@ -53,7 +55,7 @@ func (p *PlayerctlController) GetDuration() (int64, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("playerctl duration failed: %w", err)
+		return 0, errors.New("no song playing")
 	}
 
 	var duration int64
@@ -72,7 +74,7 @@ func (p *PlayerctlController) GetPosition() (float64, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("playerctl position failed: %w", err)
+		return 0, errors.New("no song playing")
 	}
 
 	var position float64
@@ -97,7 +99,7 @@ func (p *PlayerctlController) GetArtwork() ([]byte, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("playerctl artwork metadata failed: %w", err)
+		return nil, errors.New("no artwork available")
 	}
 
 	artUrl := strings.TrimSpace(out.String())
