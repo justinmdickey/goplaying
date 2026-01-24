@@ -156,6 +156,7 @@ func (m model) View() string {
 				"  Next: "+highlight.Render("n"),
 				"  Previous: "+highlight.Render("b"),
 				"  Toggle Art: "+highlight.Render("a"),
+				"  Toggle Vinyl: "+highlight.Render("v"),
 				"  Quit: "+highlight.Render("q"),
 				"  Hide: "+highlight.Render("?"),
 			))
