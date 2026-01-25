@@ -331,6 +331,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.fetchSongData()
 			}
 			return m, nil
+		case "v":
+			// Toggle vinyl mode on/off
+			cfg := config.Get()
+			cfg.Artwork.VinylMode = !cfg.Artwork.VinylMode
+			config.Set(cfg)
+
+			if !cfg.Artwork.VinylMode {
+				// Switching from vinyl to normal: clear vinyl cache and reload normal artwork
+				m.vinylFrameCache = nil
+				m.vinylCacheTrackID = ""
+				m.vinylCachedFrames = 0
+				m.vinylRotation = 0
+				m.vinylAccumulator = 0
+				m.lastTrackID = "" // Force artwork reload
+				return m, m.fetchSongData()
+			} else {
+				// Switching from normal to vinyl: regenerate vinyl frames if we have artwork
+				if len(m.rawArtworkData) > 0 && m.lastTrackID != "" && m.supportsKitty {
+					return m, generateVinylFramesCmd(m.rawArtworkData, m.lastTrackID, cfg.Artwork.VinylFrames)
+				}
+			}
+			return m, nil
 		case "?":
 			// Toggle help text
 			m.showHelp = !m.showHelp
