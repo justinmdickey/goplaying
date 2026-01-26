@@ -53,6 +53,7 @@ type model struct {
 	lastTrackID    string // Track ID for caching artwork (title+artist)
 	rawArtworkData []byte // Raw artwork data for vinyl rotation re-encoding
 	forceDeleteImg bool   // Force delete image on next render (for resize cleanup)
+	artworkChanged bool   // Flag to indicate artwork changed this tick (optimization for vinyl mode)
 
 	// Vinyl record animation (easter egg)
 	vinylRotation     int      // Current rotation angle (0-89 or 0-44) for spinning record effect
@@ -100,7 +101,8 @@ type vinylFramesMsg struct {
 type clearDeleteFlagMsg struct{}
 
 // Schedule next UI refresh tick with adaptive rate
-// Playing: 100ms (smooth progress + vinyl rotation)
+// Playing: 100ms (smooth progress)
+// Playing (vinyl mode): 250ms (slower tick since we only update on frame changes)
 // Paused: 500ms (just scrolling, save CPU)
 // Idle/Error: 1000ms (minimal updates)
 func (m model) tickCmd() tea.Cmd {
@@ -114,8 +116,25 @@ func (m model) tickCmd() tea.Cmd {
 	} else if !m.isPlaying {
 		// Paused: medium rate (still need scrolling)
 		tickRate = tickRatePaused
+	} else if cfg.Artwork.VinylMode && len(m.vinylFrameCache) > 0 {
+		// Vinyl mode optimization: sync tick rate with vinyl frame rate
+		// Calculate frames per second: (RPM / 60) * frame_count
+		// Then tick at the frame rate to catch every frame change efficiently
+		framesPerSecond := (cfg.Artwork.VinylRPM / 60.0) * float64(cfg.Artwork.VinylFrames)
+		if framesPerSecond > 0 {
+			// Time per frame in milliseconds
+			msPerFrame := 1000.0 / framesPerSecond
+			tickRate = time.Duration(msPerFrame) * time.Millisecond
+
+			// Clamp for safety: min 50ms (20fps), max 300ms (3.33fps)
+			if tickRate < 50*time.Millisecond {
+				tickRate = 50 * time.Millisecond
+			} else if tickRate > 300*time.Millisecond {
+				tickRate = 300 * time.Millisecond
+			}
+		}
 	}
-	// Playing: use configured rate (default 100ms)
+	// Playing (non-vinyl): use configured rate (default 100ms)
 
 	return tea.Tick(tickRate, func(t time.Time) tea.Msg {
 		return tickMsg(t)
@@ -277,12 +296,19 @@ func (m *model) updateVinylRotation(cfg Config) {
 	m.vinylAccumulator += framesPerTick
 
 	// Advance whole frames when accumulator >= 1
+	frameChanged := false
 	for m.vinylAccumulator >= 1.0 {
 		m.vinylRotation = (m.vinylRotation + 1) % frameCount
 		m.vinylAccumulator -= 1.0
 
 		// Use pre-cached frame - no expensive re-encoding!
 		m.artworkEncoded = m.vinylFrameCache[m.vinylRotation]
+		frameChanged = true
+	}
+
+	// Set flag if frame actually changed this tick
+	if frameChanged {
+		m.artworkChanged = true
 	}
 }
 
@@ -425,6 +451,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollTick++
 		cfg := config.Get()
 
+		// Clear artwork changed flag from previous tick
+		m.artworkChanged = false
+
 		// Update vinyl rotation if enabled
 		m.updateVinylRotation(cfg)
 
@@ -517,6 +546,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.artwork != "" {
 				m.artworkEncoded = msg.artwork
 				m.lastTrackID = trackID
+				m.artworkChanged = true // New artwork loaded
 			}
 
 			// Store raw artwork data for vinyl mode re-encoding
@@ -543,6 +573,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vinylAccumulator = 0
 			// Display first frame immediately
 			m.artworkEncoded = msg.frames[0]
+			m.artworkChanged = true // New vinyl frame cache loaded
 		}
 		return m, nil
 

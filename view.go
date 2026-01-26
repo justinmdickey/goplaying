@@ -119,9 +119,20 @@ func (m model) View() string {
 			PaddingLeft(cfg.Artwork.Padding).
 			Render(textContent.String())
 
+		// OPTIMIZATION: Only send Kitty protocol data when artwork actually changed
+		// In vinyl mode, this dramatically reduces CPU usage by not re-sending the same
+		// PNG-encoded image data to Ghostty every tick (100ms = 10x/sec)
+		// Only send when frame changes (e.g., at 10 RPM with 90 frames = ~1.5x/sec)
+		var artworkData string
+		if m.artworkChanged || m.forceDeleteImg {
+			// Artwork changed this tick - send the Kitty protocol data
+			artworkData = m.artworkEncoded
+		}
+		// else: artwork unchanged - don't send protocol data, image persists in terminal
+
 		// Place image and padded text together
 		// (In vinyl mode, the image itself is rotated and cropped to circle)
-		topSection = deleteCmd + m.artworkEncoded + paddedText
+		topSection = deleteCmd + artworkData + paddedText
 	} else {
 		// No artwork - delete any existing image and show content without padding
 		if m.supportsKitty {
