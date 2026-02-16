@@ -24,7 +24,8 @@ func NewMediaController() MediaController {
 }
 
 func (p *PlayerctlController) GetMetadata() (title, artist, album, status string, err error) {
-	cmd := exec.Command("playerctl", "metadata", "--format", "{{title}}|{{artist}}|{{album}}|{{status}}")
+	// Use tab separator to avoid conflicts with | in metadata (e.g. album names like "Artist | Sessions")
+	cmd := exec.Command("playerctl", "metadata", "--format", "{{title}}\t{{artist}}\t{{album}}\t{{status}}")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -38,7 +39,7 @@ func (p *PlayerctlController) GetMetadata() (title, artist, album, status string
 		return "", "", "", "", errors.New("no song playing")
 	}
 
-	parts := strings.Split(output, "|")
+	parts := strings.Split(output, "\t")
 	if len(parts) != 4 {
 		return "", "", "", "", fmt.Errorf("unexpected metadata format: got %d parts, expected 4", len(parts))
 	}
