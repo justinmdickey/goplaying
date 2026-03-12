@@ -30,3 +30,4 @@ goplaying
 helpers/nowplaying/nowplaying
 vinyl_debug*.log
 .worktrees/
+swift-helpers/
