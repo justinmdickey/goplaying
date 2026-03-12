@@ -6,10 +6,10 @@ before:
     - go mod download
 
 builds:
-  - env:
+  - id: darwin
+    env:
       - CGO_ENABLED=0
     goos:
-      - linux
       - darwin
     goarch:
       - amd64
@@ -21,28 +21,49 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
 
+  - id: linux
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    binary: goplaying
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
 archives:
-  - id: targz
+  - id: darwin-targz
+    builds:
+      - darwin
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
     format: tar.gz
     files:
       - README.md
       - LICENSE
-  - id: zip
+      - src: dist/nowplaying-darwin-{{ if eq .Arch "amd64" }}x86_64{{ else }}arm64{{ end }}/nowplaying
+        dst: .
+        strip_parent: true
+
+  - id: linux-targz
+    builds:
+      - linux
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
-    format: zip
+    format: tar.gz
     files:
       - README.md
       - LICENSE
@@ -53,7 +74,7 @@ checksum:
 brews:
   - name: goplaying
     ids:
-      - targz
+      - darwin-targz
     repository:
       owner: justinmdickey
       name: homebrew-tap
@@ -64,15 +85,17 @@ brews:
     directory: Formula
     install: |
       bin.install "goplaying"
+      bin.install "nowplaying"
     test: |
       system "#{bin}/goplaying", "--version"
     caveats: |
-      macOS: 
-        - Album artwork works with Spotify and Apple Music via AppleScript
-        - For broader app support (Safari, Chrome, etc.), build the Swift helper with 'make darwin'
-      Linux: 
+      macOS:
+        - The nowplaying helper is included for broad Now Playing support
+          (Safari, Chrome, and any app that reports to macOS Media Center)
+        - Album artwork works with Spotify, Apple Music, and more
+      Linux:
+        - Install via GitHub releases (Homebrew formula is macOS-only)
         - Requires playerctl to be installed separately
-        - Album artwork works with any MPRIS player that provides artwork
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

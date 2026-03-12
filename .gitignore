@@ -29,3 +29,4 @@ go.work
 goplaying
 helpers/nowplaying/nowplaying
 vinyl_debug*.log
+.worktrees/
