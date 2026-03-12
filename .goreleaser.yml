@@ -50,7 +50,7 @@ archives:
     files:
       - README.md
       - LICENSE
-      - src: dist/nowplaying-darwin-{{ if eq .Arch "amd64" }}x86_64{{ else }}arm64{{ end }}/nowplaying
+      - src: swift-helpers/nowplaying-darwin-{{ if eq .Arch "amd64" }}x86_64{{ else }}arm64{{ end }}/nowplaying
         dst: .
         strip_parent: true
 

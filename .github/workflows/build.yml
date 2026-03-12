@@ -45,18 +45,18 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: nowplaying-darwin-arm64
-        path: dist/nowplaying-darwin-arm64
+        path: swift-helpers/nowplaying-darwin-arm64
 
     - name: Download Swift helper (x86_64)
       uses: actions/download-artifact@v4
       with:
         name: nowplaying-darwin-x86_64
-        path: dist/nowplaying-darwin-x86_64
+        path: swift-helpers/nowplaying-darwin-x86_64
 
     - name: Make helpers executable
       run: |
-        chmod +x dist/nowplaying-darwin-arm64/nowplaying
-        chmod +x dist/nowplaying-darwin-x86_64/nowplaying
+        chmod +x swift-helpers/nowplaying-darwin-arm64/nowplaying
+        chmod +x swift-helpers/nowplaying-darwin-x86_64/nowplaying
 
     - name: Set up Go
       uses: actions/setup-go@v5
