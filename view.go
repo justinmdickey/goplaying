@@ -91,7 +91,16 @@ func (m model) View() string {
 			// Progress bar with smooth interpolated position - will be placed below
 			// Bar width calculated from max_width, leaving room for timestamps
 			barWidth := cfg.UI.MaxWidth - 17
+			if barWidth < 0 {
+				barWidth = 0
+			}
+			if progress > 1 {
+				progress = 1
+			}
 			filled := int(float64(barWidth) * progress)
+			if filled > barWidth {
+				filled = barWidth
+			}
 			progressBar := highlight.Render(strings.Repeat("█", filled)) +
 				white.Render(strings.Repeat("─", barWidth-filled))
 
