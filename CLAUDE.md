@@ -26,7 +26,7 @@ Never commit directly to main unless explicitly requested.
 
 - **Platforms**: macOS (MediaRemote + AppleScript), Linux (playerctl/MPRIS)
 - **Frameworks**: Bubble Tea (TUI), Lipgloss (styling)
-- **Special Features**: Kitty graphics protocol for album artwork, K-means color extraction, live config reload
+- **Special Features**: Kitty graphics protocol for album artwork, dominant-color extraction, live config reload
 
 ## Key Files
 
@@ -60,10 +60,10 @@ The application is split into focused modules for better maintainability:
   - Dynamic status icons (play/pause/stop)
 
 - **artwork.go** (248 lines): Image processing and color extraction
-  - `extractDominantColor()`: K-means color extraction from artwork
+  - `extractDominantColor()`: Sampling-based dominant color extraction (scores saturation/lightness for readability)
   - `encodeArtworkForKitty()`: Converts artwork to Kitty graphics protocol
   - `supportsKittyGraphics()`: Terminal capability detection
-  - Handles base64 encoding/decoding, image resizing, chunking
+  - Handles image resizing and Kitty protocol chunking (controllers deliver raw bytes)
 
 - **text.go** (32 lines): Text utilities
   - `formatTime()`: Converts seconds to MM:SS format
@@ -127,14 +127,14 @@ The application is split into focused modules for better maintainability:
 ### Color Modes
 - **Manual**: Uses `config.UI.Color` always
 - **Auto**: 
-  - Extracts dominant color via K-means when track changes
+  - Extracts dominant color via pixel sampling + saturation/lightness scoring when track changes
   - Falls back to manual color on initial load (before artwork)
   - Persists extracted color until next track (doesn't revert on fetch)
 
 ### Artwork Flow
-1. Media controller retrieves artwork (base64 or raw bytes)
-2. `extractDominantColor()`: Decode base64 → image.Decode → prominentcolor.Kmeans
-3. `encodeArtworkForKitty()`: Decode base64 → resize to 300px → PNG encode → base64 → chunk → Kitty protocol
+1. Media controller retrieves artwork as raw bytes (base64 is decoded at the source)
+2. `processArtwork()`: image.Decode once → `extractDominantColor()` + `encodeArtworkForKitty()`
+3. `encodeArtworkForKitty()`: resize to 300px → PNG encode → base64 → chunk → Kitty protocol
 4. Kitty protocol: Escape sequences with image ID 42, cell-based sizing (c=13 columns)
 
 ### Text Scrolling
@@ -352,14 +352,13 @@ yay -Si goplaying-git  # Check AUR
 - Gracefully degrades to text-only mode
 
 ### Color Extraction
-- Artwork data is base64-encoded on macOS (MediaRemote/playerctl)
-- Must decode before passing to `image.Decode()`
-- K-means on 300px image balances speed vs accuracy
-- Silent failures return empty string (should fall back to manual color)
+- Media controllers return raw image bytes; base64 from MediaRemote/playerctl sources is decoded in the controller
+- Pixel sampling (every 5th pixel) on the artwork balances speed vs accuracy
+- Colors too dark/light/gray are rejected; if nothing readable is found the previous/manual color is kept
 
 ### Track Caching
 - Track ID = `title|artist` (not unique for compilations with same artist)
-- Artwork only fetched on track change to avoid redundant processing
+- Artwork fetch skipped once artwork for the current track is cached; retried while missing (players report art late)
 - First load: manual color → switches to auto when artwork loads
 - Color persists for entire track (doesn't revert on subsequent fetches)
 
@@ -370,7 +369,6 @@ yay -Si goplaying-git  # Check AUR
 - `github.com/charmbracelet/lipgloss` - Terminal styling
 - `github.com/spf13/viper` - Configuration management
 - `github.com/fsnotify/fsnotify` - File watching for live reload
-- `github.com/EdlinOrg/prominentcolor` - K-means color extraction
 - `github.com/nfnt/resize` - Image resizing
 - `golang.org/x/image/webp` - WebP image support
 
