@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // hashBytes computes a fast FNV-1a hash of raw bytes (for artwork stale detection)
@@ -104,8 +104,30 @@ type vinylFramesMsg struct {
 	trackID string   // Track ID these frames belong to
 }
 
+// Result of a playback control action (play-pause/next/previous)
+type controlMsg struct {
+	err error
+}
+
 // Clear the forceDeleteImg flag after one render cycle
 type clearDeleteFlagMsg struct{}
+
+// vinylTickRate returns the UI tick rate synced to the vinyl frame rate,
+// clamped to [50ms, 300ms]. Shared by tickCmd and updateVinylRotation so the
+// rotation math always matches the actual tick interval.
+func vinylTickRate(cfg Config) time.Duration {
+	framesPerSecond := (cfg.Artwork.VinylRPM / 60.0) * float64(cfg.Artwork.VinylFrames)
+	if framesPerSecond <= 0 {
+		return 0
+	}
+	tickRate := time.Duration(1000.0/framesPerSecond) * time.Millisecond
+	if tickRate < 50*time.Millisecond {
+		tickRate = 50 * time.Millisecond
+	} else if tickRate > 300*time.Millisecond {
+		tickRate = 300 * time.Millisecond
+	}
+	return tickRate
+}
 
 // Schedule next UI refresh tick with adaptive rate
 // Playing: 100ms (smooth progress)
@@ -125,20 +147,9 @@ func (m model) tickCmd() tea.Cmd {
 		tickRate = tickRatePaused
 	} else if cfg.Artwork.VinylMode && len(m.vinylFrameCache) > 0 {
 		// Vinyl mode optimization: sync tick rate with vinyl frame rate
-		// Calculate frames per second: (RPM / 60) * frame_count
-		// Then tick at the frame rate to catch every frame change efficiently
-		framesPerSecond := (cfg.Artwork.VinylRPM / 60.0) * float64(cfg.Artwork.VinylFrames)
-		if framesPerSecond > 0 {
-			// Time per frame in milliseconds
-			msPerFrame := 1000.0 / framesPerSecond
-			tickRate = time.Duration(msPerFrame) * time.Millisecond
-
-			// Clamp for safety: min 50ms (20fps), max 300ms (3.33fps)
-			if tickRate < 50*time.Millisecond {
-				tickRate = 50 * time.Millisecond
-			} else if tickRate > 300*time.Millisecond {
-				tickRate = 300 * time.Millisecond
-			}
+		// to catch every frame change efficiently
+		if vt := vinylTickRate(cfg); vt > 0 {
+			tickRate = vt
 		}
 	}
 	// Playing (non-vinyl): use configured rate (default 100ms)
@@ -174,6 +185,28 @@ func generateVinylFramesCmd(rawArtwork []byte, trackID string, frameCount int) t
 	}
 }
 
+// controlCmd runs a playback control action in the background, then fetches
+// fresh state. Running Control() outside Update keeps the UI responsive
+// (AppleScript on macOS can take 100ms+ per call).
+func (m model) controlCmd(action string) tea.Cmd {
+	controller := m.mediaController
+	return tea.Sequence(
+		func() tea.Msg {
+			return controlMsg{err: controller.Control(action)}
+		},
+		m.fetchSongData(),
+	)
+}
+
+// resetArtworkState clears all cached artwork state so the next fetch
+// re-fetches and re-encodes. Must be called whenever artworkEncoded is
+// cleared, otherwise the unchanged hash suppresses re-encoding forever.
+func (m *model) resetArtworkState() {
+	m.artworkEncoded = ""
+	m.lastTrackID = ""
+	m.lastArtworkHash = 0
+}
+
 // Fetch song data in background (doesn't block UI)
 func (m model) fetchSongData() tea.Cmd {
 	return func() tea.Msg {
@@ -185,14 +218,16 @@ func (m model) fetchSongData() tea.Cmd {
 			return songDataMsg{err: err}
 		}
 
+		// Duration/position are best-effort: radio streams and some players
+		// don't report them. Degrade to no progress bar instead of erroring.
 		duration, err := m.mediaController.GetDuration()
 		if err != nil {
-			return songDataMsg{err: err}
+			duration = 0
 		}
 
 		position, err := m.mediaController.GetPosition()
 		if err != nil {
-			return songDataMsg{err: err}
+			position = 0
 		}
 
 		// Fetch artwork if Kitty protocol is supported
@@ -201,8 +236,10 @@ func (m model) fetchSongData() tea.Cmd {
 		if m.supportsKitty && cfg.Artwork.Enabled {
 			trackID := fmt.Sprintf("%s|%s", title, artist)
 
-			// Skip artwork fetch only if paused AND same track (CPU bottleneck when idle)
-			skipArtworkFetch := (strings.ToLower(status) != "playing") && (trackID == m.lastTrackID)
+			// Skip artwork fetch when we already have artwork for this track.
+			// Keep retrying while we have none (players often report artwork a
+			// beat later than metadata on track change).
+			skipArtworkFetch := trackID == m.lastTrackID && m.lastArtworkHash != 0
 
 			if !skipArtworkFetch {
 				artworkData, artErr := m.mediaController.GetArtwork()
@@ -260,8 +297,12 @@ func (m *model) updateVinylRotation(cfg Config) {
 	//          frames_per_tick = frames_per_second * tick_duration_seconds
 	framesPerSecond := cfg.Artwork.VinylRPM / 60.0 * float64(frameCount)
 
-	// Tick duration depends on playback state (adaptive tick rate)
-	tickDuration := 0.1 // 100ms when playing
+	// Use the actual tick interval (tickCmd syncs ticks to the frame rate when
+	// the vinyl cache is ready, which is the only state where we get here)
+	tickDuration := vinylTickRate(cfg).Seconds()
+	if tickDuration <= 0 {
+		return
+	}
 	framesPerTick := framesPerSecond * tickDuration
 
 	// Accumulate fractional frames
@@ -294,32 +335,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		case "p":
-			if err := m.mediaController.Control("play-pause"); err != nil {
-				m.lastError = err
-			}
-			// Immediately fetch fresh state after control action
-			return m, m.fetchSongData()
+			// Run control in background, then fetch fresh state
+			return m, m.controlCmd("play-pause")
 		case "n":
-			if err := m.mediaController.Control("next"); err != nil {
-				m.lastError = err
-			}
-			return m, m.fetchSongData()
+			return m, m.controlCmd("next")
 		case "b":
-			if err := m.mediaController.Control("previous"); err != nil {
-				m.lastError = err
-			}
-			return m, m.fetchSongData()
+			return m, m.controlCmd("previous")
 		case "a":
 			// Toggle artwork on/off
 			cfg := config.Get()
 			cfg.Artwork.Enabled = !cfg.Artwork.Enabled
 			config.Set(cfg)
 			if !cfg.Artwork.Enabled {
-				// Clear artwork when disabling
-				m.artworkEncoded = ""
+				// Clear artwork when disabling (including the hash, so
+				// re-enabling actually re-encodes)
+				m.resetArtworkState()
 			} else if m.supportsKitty {
 				// Re-fetch artwork when enabling
-				m.lastTrackID = "" // Clear track ID to force artwork fetch
+				m.resetArtworkState()
 				return m, m.fetchSongData()
 			}
 			return m, nil
@@ -336,7 +369,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.vinylCachedFrames = 0
 				m.vinylRotation = 0
 				m.vinylAccumulator = 0
-				m.lastTrackID = "" // Force artwork reload
+				m.resetArtworkState() // Force re-fetch and re-encode (hash unchanged otherwise)
 				return m, m.fetchSongData()
 			} else {
 				// Switching from normal to vinyl: regenerate vinyl frames if we have artwork
@@ -378,7 +411,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vinylFrameCache = nil
 			m.vinylCacheTrackID = ""
 			m.vinylCachedFrames = 0
-			m.lastTrackID = "" // Force artwork reload
+			m.resetArtworkState() // Force re-fetch and re-encode of normal artwork
 			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
 		}
 
@@ -401,12 +434,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if !cfg.Artwork.Enabled && m.artworkEncoded != "" {
-			// Delete the image from terminal and clear the encoded data
-			m.artworkEncoded = ""
-			m.lastTrackID = "" // Clear track ID so artwork can be re-fetched later
+			// Delete the image from terminal and clear all artwork state
+			m.resetArtworkState()
 		} else if cfg.Artwork.Enabled && m.artworkEncoded == "" && m.supportsKitty {
-			// Artwork was just enabled, clear track ID and fetch it for the current song
-			m.lastTrackID = ""
+			// Artwork was just enabled, reset state and fetch it for the current song
+			m.resetArtworkState()
 			return m, tea.Batch(watchConfigCmd(), m.fetchSongData())
 		}
 		// Continue watching for more config changes
@@ -469,9 +501,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cfg := config.Get()
 		if msg.err != nil {
 			m.lastError = msg.err
-			m.artworkEncoded = ""
-			m.lastTrackID = ""
-			m.lastArtworkHash = 0
+			m.resetArtworkState()
 			return m, nil
 		}
 
@@ -486,6 +516,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vinylFrameCache = nil
 			m.vinylCacheTrackID = ""
 			m.lastTrackID = trackID
+
+			// New track: forget the old artwork hash so the fetch loop keeps
+			// trying until this track's artwork arrives (and so identical
+			// artwork from the same album is still re-processed)
+			m.lastArtworkHash = 0
 		}
 
 		m.songData.Title = msg.title
@@ -509,10 +544,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Process artwork (decode, encode for Kitty, extract color)
 			shouldExtractColor := cfg.UI.ColorMode == "auto"
 			func() {
+				// Malformed images can panic inside image decoders; artwork
+				// must never crash the UI, so swallow and keep the old art
 				defer func() {
-					if r := recover(); r != nil {
-						// Silently ignore artwork processing panics
-					}
+					_ = recover()
 				}()
 				color, encoded, err := processArtwork(msg.rawArtwork, shouldExtractColor, m.vinylRotation, cfg.Artwork.VinylFrames)
 				if err == nil {
@@ -544,6 +579,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vinylAccumulator = 0
 			// Display first frame immediately
 			m.artworkEncoded = msg.frames[0]
+		}
+		return m, nil
+
+	case controlMsg:
+		// Result of a background playback control action
+		if msg.err != nil {
+			m.lastError = msg.err
 		}
 		return m, nil
 
