@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -13,16 +14,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
+
+// artworkHTTPClient downloads remote artwork with a timeout so a hung CDN
+// can't stall the fetch goroutine indefinitely.
+var artworkHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+// mediaRemoteRetryInterval is how long to wait before retrying MediaRemote
+// after a failure, instead of permanently falling back to AppleScript.
+const mediaRemoteRetryInterval = 5 * time.Minute
 
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
 type HybridController struct {
-	helperPath      string
-	currentPlayer   string
-	skipMediaRemote bool    // Skip MediaRemote if it failed previously for faster fallback
-	cachedDuration  int64   // Cached duration from last metadata call
-	cachedPosition  float64 // Cached position from last metadata call
+	helperPath string
+
+	// mu guards the mutable state below. Bubble Tea commands run in separate
+	// goroutines, and a scheduled fetch can overlap a key-triggered fetch.
+	mu                   sync.Mutex
+	currentPlayer        string
+	mediaRemoteDownUntil time.Time // Skip MediaRemote until this time after a failure
+	cachedDuration       int64     // Cached duration from last metadata call
+	cachedPosition       float64   // Cached position from last metadata call
 }
 
 // NewMediaController creates a new media controller for the current platform
@@ -54,6 +69,24 @@ func NewMediaController() MediaController {
 
 	// If helper not found, return controller anyway - will fallback to AppleScript only
 	return &HybridController{helperPath: ""}
+}
+
+// useMediaRemote reports whether MediaRemote should be tried right now.
+func (h *HybridController) useMediaRemote() bool {
+	if h.helperPath == "" {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return time.Now().After(h.mediaRemoteDownUntil)
+}
+
+// markMediaRemoteFailed disables MediaRemote for a while so we fall back to
+// AppleScript quickly, but retry later in case the failure was transient.
+func (h *HybridController) markMediaRemoteFailed() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.mediaRemoteDownUntil = time.Now().Add(mediaRemoteRetryInterval)
 }
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
@@ -96,7 +129,7 @@ func (h *HybridController) findActivePlayer() (string, error) {
 		}
 	}
 
-	return "", errors.New("no active music player found")
+	return "", ErrNothingPlaying
 }
 
 func (h *HybridController) runHelper(args ...string) (string, error) {
@@ -120,8 +153,8 @@ func (h *HybridController) runHelper(args ...string) (string, error) {
 }
 
 func (h *HybridController) GetMetadata() (title, artist, album, status string, err error) {
-	// Try MediaRemote first if not previously failed (works with any app that registers Now Playing)
-	if !h.skipMediaRemote {
+	// Try MediaRemote first (works with any app that registers Now Playing)
+	if h.useMediaRemote() {
 		output, err := h.runHelper("metadata")
 		if err == nil && output != "" {
 			parts := strings.Split(output, "|")
@@ -133,17 +166,19 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 					nil
 			}
 		}
-		// MediaRemote failed - skip it for future calls this session
-		h.skipMediaRemote = true
+		// MediaRemote failed - fall back to AppleScript, retry later
+		h.markMediaRemoteFailed()
 	}
 
 	// Fallback to AppleScript for Music/Spotify
 	player, err := h.findActivePlayer()
 	if err != nil {
-		return "", "", "", "", errors.New("no song playing")
+		return "", "", "", "", ErrNothingPlaying
 	}
 
+	h.mu.Lock()
 	h.currentPlayer = player
+	h.mu.Unlock()
 
 	// Get all data in a single AppleScript call for performance
 	// Returns: title|artist|album|status|duration|position
@@ -192,9 +227,14 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 	if duration > 1000 {
 		duration = duration / 1000
 	}
-	h.cachedDuration = int64(duration)
 
-	fmt.Sscanf(strings.TrimSpace(parts[5]), "%f", &h.cachedPosition)
+	var position float64
+	fmt.Sscanf(strings.TrimSpace(parts[5]), "%f", &position)
+
+	h.mu.Lock()
+	h.cachedDuration = int64(duration)
+	h.cachedPosition = position
+	h.mu.Unlock()
 
 	return strings.TrimSpace(parts[0]),
 		strings.TrimSpace(parts[1]),
@@ -204,8 +244,8 @@ func (h *HybridController) GetMetadata() (title, artist, album, status string, e
 }
 
 func (h *HybridController) GetDuration() (int64, error) {
-	// Try MediaRemote first if not previously failed
-	if !h.skipMediaRemote {
+	// Try MediaRemote first
+	if h.useMediaRemote() {
 		output, err := h.runHelper("duration")
 		if err == nil {
 			var duration int64
@@ -218,12 +258,14 @@ func (h *HybridController) GetDuration() (int64, error) {
 
 	// Return cached value from GetMetadata() call (batched AppleScript)
 	// This avoids a second osascript invocation for better performance
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return h.cachedDuration, nil
 }
 
 func (h *HybridController) GetPosition() (float64, error) {
-	// Try MediaRemote first if not previously failed
-	if !h.skipMediaRemote {
+	// Try MediaRemote first
+	if h.useMediaRemote() {
 		output, err := h.runHelper("position")
 		if err == nil {
 			var position float64
@@ -236,12 +278,14 @@ func (h *HybridController) GetPosition() (float64, error) {
 
 	// Return cached value from GetMetadata() call (batched AppleScript)
 	// This avoids a second osascript invocation for better performance
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return h.cachedPosition, nil
 }
 
 func (h *HybridController) Control(command string) error {
-	// Try MediaRemote first if not previously failed
-	if !h.skipMediaRemote {
+	// Try MediaRemote first
+	if h.useMediaRemote() {
 		_, err := h.runHelper(command)
 		if err == nil {
 			return nil
@@ -249,7 +293,9 @@ func (h *HybridController) Control(command string) error {
 	}
 
 	// Fallback to AppleScript
+	h.mu.Lock()
 	player := h.currentPlayer
+	h.mu.Unlock()
 	if player == "" {
 		var err error
 		player, err = h.findActivePlayer()
@@ -275,17 +321,20 @@ func (h *HybridController) Control(command string) error {
 }
 
 func (h *HybridController) GetArtwork() ([]byte, error) {
-	// Try MediaRemote first if not previously failed
-	if !h.skipMediaRemote {
+	// Try MediaRemote first - helper returns base64, decode to raw bytes here
+	if h.useMediaRemote() {
 		output, err := h.runHelper("artwork")
 		if err == nil && output != "" {
-			// Helper returns base64-encoded data
-			return []byte(output), nil
+			if raw, decErr := base64.StdEncoding.DecodeString(output); decErr == nil && len(raw) > 0 {
+				return raw, nil
+			}
 		}
 	}
 
 	// Fallback to AppleScript - save artwork to temp file then read it
+	h.mu.Lock()
 	player := h.currentPlayer
+	h.mu.Unlock()
 	if player == "" {
 		var err error
 		player, err = h.findActivePlayer()
@@ -306,9 +355,9 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 	// Different AppleScript syntax for different players
 	var script string
 	if player == "Spotify" {
-		// Spotify uses artwork_url instead of raw artwork data
+		// Spotify uses artwork url instead of raw artwork data
 		// We need to download it separately
-		script = fmt.Sprintf(`
+		script = `
 			tell application "Spotify"
 				try
 					return artwork url of current track
@@ -316,7 +365,7 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 					error errMsg
 				end try
 			end tell
-		`)
+		`
 	} else {
 		// Music.app and other apps use raw data of artwork
 		script = fmt.Sprintf(`
@@ -350,13 +399,13 @@ func (h *HybridController) GetArtwork() ([]byte, error) {
 		}
 
 		// Download the artwork from the URL
-		resp, err := http.Get(artworkURL)
+		resp, err := artworkHTTPClient.Get(artworkURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to download artwork: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("artwork download failed with status: %d", resp.StatusCode)
 		}
 

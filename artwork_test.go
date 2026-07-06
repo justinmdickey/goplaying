@@ -29,12 +29,12 @@ func TestDecodeArtworkData(t *testing.T) {
 		}
 	})
 
-	t.Run("base64 encoded", func(t *testing.T) {
+	t.Run("base64 encoded is rejected", func(t *testing.T) {
+		// Controllers decode base64 at the source; this layer only accepts raw bytes
 		encoded := base64.StdEncoding.EncodeToString(rawData)
-		img, err := decodeArtworkData([]byte(encoded))
-		assertNoError(t, err)
-		if img == nil {
-			t.Error("Expected non-nil image")
+		_, err := decodeArtworkData([]byte(encoded))
+		if err == nil {
+			t.Error("Expected error for base64 input (raw bytes contract)")
 		}
 	})
 
@@ -201,20 +201,6 @@ func TestProcessArtwork(t *testing.T) {
 		}
 	})
 
-	t.Run("base64 input", func(t *testing.T) {
-		base64Data := base64.StdEncoding.EncodeToString(imageData)
-		color, encoded, err := processArtwork([]byte(base64Data), true, 0, 90)
-		assertNoError(t, err)
-
-		if !isValidHexColor(color) {
-			t.Errorf("Invalid hex color: %s", color)
-		}
-
-		if encoded == "" {
-			t.Error("Expected non-empty encoded string")
-		}
-	})
-
 	t.Run("invalid data", func(t *testing.T) {
 		_, _, err := processArtwork([]byte("not an image"), true, 0, 90)
 		if err == nil {
@@ -337,14 +323,6 @@ func BenchmarkDecodeArtworkData(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			decodeArtworkData(imageData)
-		}
-	})
-
-	b.Run("base64 encoded", func(b *testing.B) {
-		encoded := base64.StdEncoding.EncodeToString(imageData)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			decodeArtworkData([]byte(encoded))
 		}
 	})
 }
