@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
@@ -271,7 +271,13 @@ func watchConfigCmd() tea.Cmd {
 	}
 }
 
-func initConfig() {
+// lastFileCfg tracks the config as last loaded from the file (before runtime
+// keybind toggles). Used on live reload to distinguish "user edited this key
+// in the file" (file wins) from "unrelated edit" (runtime toggle preserved).
+// Only touched from initConfig and the fsnotify callback.
+var lastFileCfg Config
+
+func initConfig(explicitFlags map[string]bool) {
 	// Set defaults
 	viper.SetDefault("ui.color", "2")
 	viper.SetDefault("ui.color_mode", "auto")
@@ -318,11 +324,11 @@ func initConfig() {
 		}
 	}
 
-	// Bind command-line flags (they take precedence)
-	if colorFlag != "2" { // Only override if flag was explicitly set
+	// Bind command-line flags (they take precedence for the whole run)
+	if explicitFlags["color"] || explicitFlags["c"] {
 		viper.Set("ui.color", colorFlag)
 	}
-	if noArtworkFlag {
+	if explicitFlags["no-artwork"] {
 		viper.Set("artwork.enabled", false)
 	}
 
@@ -339,6 +345,7 @@ func initConfig() {
 	}
 
 	config.Set(cfg)
+	lastFileCfg = cfg
 
 	// Watch for config file changes and live reload
 	viper.OnConfigChange(func(e fsnotify.Event) {
@@ -350,6 +357,19 @@ func initConfig() {
 				// Don't print to stderr during TUI operation as it corrupts the display
 				return
 			}
+
+			// Preserve runtime keybind toggles ('a'/'v') across reloads: if the
+			// file value for a togglable key didn't change, keep the current
+			// in-memory value; if the user actually edited it, the file wins.
+			fileCfg := newCfg
+			cur := config.Get()
+			if newCfg.Artwork.Enabled == lastFileCfg.Artwork.Enabled {
+				newCfg.Artwork.Enabled = cur.Artwork.Enabled
+			}
+			if newCfg.Artwork.VinylMode == lastFileCfg.Artwork.VinylMode {
+				newCfg.Artwork.VinylMode = cur.Artwork.VinylMode
+			}
+			lastFileCfg = fileCfg
 
 			// Valid config - apply it
 			config.Set(newCfg)
