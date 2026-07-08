@@ -97,6 +97,32 @@ brews:
         - Install via GitHub releases (Homebrew formula is macOS-only)
         - Requires playerctl to be installed separately
 
+aurs:
+  - name: goplaying-bin
+    ids:
+      - linux-targz
+    homepage: "https://github.com/justinmdickey/goplaying"
+    description: "Now Playing TUI written in Go (binary release)"
+    license: "MIT"
+    maintainers:
+      - 'Justin Dickey <justin.dickey.eg@gmail.com>'
+    git_url: "ssh://aur@aur.archlinux.org/goplaying-bin.git"
+    private_key: "{{ .Env.AUR_KEY }}"
+    depends:
+      - playerctl
+    provides:
+      - goplaying
+    conflicts:
+      - goplaying
+      - goplaying-git
+    commit_author:
+      name: goplaying-releaser
+      email: justin.dickey.eg@gmail.com
+    commit_msg_template: "Update to {{ .Version }}"
+    package: |-
+      install -Dm755 "./goplaying" "${pkgdir}/usr/bin/goplaying"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/goplaying-bin/LICENSE"
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 

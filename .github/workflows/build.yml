@@ -72,3 +72,54 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        AUR_KEY: ${{ secrets.AUR_KEY }}
+
+  update-aur-git:
+    name: Bump goplaying-git (AUR)
+    runs-on: ubuntu-latest
+    needs: release
+    container:
+      image: archlinux:base-devel
+    steps:
+    - name: Install dependencies
+      run: pacman -Syu --noconfirm git openssh sudo
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Compute pkgver from tagged commit
+      id: ver
+      run: |
+        count=$(git rev-list --count HEAD)
+        short=$(git rev-parse --short HEAD)
+        echo "pkgver=r${count}.${short}" >> "$GITHUB_OUTPUT"
+
+    - name: Clone, bump, and push AUR package
+      env:
+        AUR_KEY: ${{ secrets.AUR_KEY }}
+        PKGVER: ${{ steps.ver.outputs.pkgver }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        # makepkg refuses to run as root, so do everything as an unprivileged user.
+        useradd -m builder
+        install -d -m 700 -o builder -g builder /home/builder/.ssh
+        printf '%s\n' "$AUR_KEY" | install -m 600 -o builder -g builder /dev/stdin /home/builder/.ssh/aur
+        # `env` sets HOME + vars for builder's shell without relying on sudo -E / SETENV.
+        sudo -u builder env HOME=/home/builder PKGVER="$PKGVER" TAG="$TAG" \
+          bash -euo pipefail <<'EOF'
+        export GIT_SSH_COMMAND="ssh -i /home/builder/.ssh/aur -o StrictHostKeyChecking=accept-new"
+        git clone ssh://aur@aur.archlinux.org/goplaying-git.git /tmp/aur
+        cd /tmp/aur
+        sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+        grep -q "^pkgver=${PKGVER}$" PKGBUILD || { echo "pkgver bump failed to match PKGBUILD"; exit 1; }
+        makepkg --printsrcinfo > .SRCINFO
+        if git diff --quiet; then
+          echo "No changes to push"
+          exit 0
+        fi
+        git -c user.name=goplaying-releaser -c user.email=justin.dickey.eg@gmail.com \
+          commit -am "Update to ${PKGVER} (${TAG})"
+        git push
+        EOF
