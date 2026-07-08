@@ -92,6 +92,8 @@ jobs:
     - name: Compute pkgver from tagged commit
       id: ver
       run: |
+        # Container runs git as root over checkout files owned by another uid.
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
         count=$(git rev-list --count HEAD)
         short=$(git rev-parse --short HEAD)
         echo "pkgver=r${count}.${short}" >> "$GITHUB_OUTPUT"
