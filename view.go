@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -38,20 +39,15 @@ func (m model) View() string {
 	var progressBarContent string
 
 	if m.lastError != nil {
-		// Check if it's a "nothing playing" state vs actual error
-		errMsg := m.lastError.Error()
-		isNothingPlaying := strings.Contains(errMsg, "can't get metadata") ||
-			strings.Contains(errMsg, "no active music player") ||
-			strings.Contains(errMsg, "no song playing")
-
-		if isNothingPlaying {
+		// Idle state (nothing playing) vs actual error
+		if errors.Is(m.lastError, ErrNothingPlaying) {
 			// Show friendly placeholder for "nothing playing" state
 			textContent.WriteString(highlight.Render("󰓃 Now Playing") + "\n\n")
 			textContent.WriteString(mutedStyle.Render("Nothing playing") + "\n\n")
 			textContent.WriteString(dimStyle.Render("Start playing music to begin"))
 		} else {
 			// Actual error - show in muted color (not bright red)
-			textContent.WriteString(errorStyle.Render("Error: " + errMsg))
+			textContent.WriteString(errorStyle.Render("Error: " + m.lastError.Error()))
 		}
 	} else {
 		textContent.WriteString(highlight.Render("󰓃 Now Playing") + "\n\n")

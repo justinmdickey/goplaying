@@ -4,7 +4,8 @@ linters-settings:
   goimports:
     local-prefixes: goplaying
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
   misspell:
     locale: US
   errcheck:

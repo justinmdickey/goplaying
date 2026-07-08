@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/EdlinOrg/prominentcolor"
 	"github.com/nfnt/resize"
 	_ "golang.org/x/image/webp"
 )
@@ -37,23 +36,15 @@ const (
 	idealMaxLight = 0.7  // Ideal maximum lightness
 )
 
-// decodeArtworkData decodes base64-encoded or raw image data into an image.Image
-// This handles both base64 (from MediaRemote/playerctl) and raw bytes (from AppleScript)
+// decodeArtworkData decodes raw image bytes into an image.Image.
+// Media controllers are responsible for handing over raw bytes (they decode
+// base64 at the source where the encoding is known).
 func decodeArtworkData(imgData []byte) (image.Image, error) {
-	// Try base64 decode first (from MediaRemote/playerctl)
-	var imageData []byte
-	if decoded, err := base64.StdEncoding.DecodeString(string(imgData)); err == nil {
-		imageData = decoded
-	} else {
-		// Already raw data (from AppleScript)
-		imageData = imgData
-	}
-
-	if len(imageData) == 0 {
+	if len(imgData) == 0 {
 		return nil, fmt.Errorf("empty image data")
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(imageData))
+	img, _, err := image.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
@@ -161,13 +152,9 @@ func extractDominantColor(img image.Image) (string, error) {
 	}
 
 	if len(candidates) == 0 {
-		// Fallback: try K-means if our sampling didn't find good colors
-		colors, err := prominentcolor.Kmeans(img)
-		if err != nil || len(colors) == 0 {
-			return "", fmt.Errorf("no suitable colors found")
-		}
-		c := colors[0]
-		return fmt.Sprintf("#%02x%02x%02x", c.Color.R, c.Color.G, c.Color.B), nil
+		// No readable color in the artwork (too dark/light/gray). Callers keep
+		// the previous or manual color, which beats forcing an unreadable one.
+		return "", fmt.Errorf("no suitable colors found")
 	}
 
 	// Sort by score (highest first)
