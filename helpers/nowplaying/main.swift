@@ -52,8 +52,10 @@ enum MRCommand: UInt32 {
 func getMetadata() {
     let semaphore = DispatchSemaphore(value: 0)
     var hasInfo = false
+    var infoCount = -1
 
     MRMediaRemoteGetNowPlayingInfo(nowPlayingQueue) { info in
+        infoCount = info.count
         // Check if we have any info at all
         if info.isEmpty {
             semaphore.signal()
@@ -91,8 +93,10 @@ func getMetadata() {
         }
     }
 
-    // Short timeout for fast fallback to AppleScript if MediaRemote has no data
-    let result = semaphore.wait(timeout: .now() + 0.2)
+    // Safety net for a slow callback (e.g. a cold mediaremoted daemon on the
+    // first call). When there is genuinely nothing playing the callback fires
+    // immediately with empty info, so this value adds no idle-state latency.
+    let result = semaphore.wait(timeout: .now() + 1.0)
 
     if result == .timedOut {
         fputs("Error: Timeout waiting for Now Playing info\n", stderr)
@@ -100,7 +104,9 @@ func getMetadata() {
     }
 
     if !hasInfo {
-        fputs("Error: No media playing\n", stderr)
+        // Distinguish "daemon returned nothing" (count 0) from "info came back
+        // but the keys didn't match" (count > 0) for future macOS versions.
+        fputs("Error: No media playing (info keys: \(infoCount))\n", stderr)
         exit(1)
     }
 }
@@ -124,8 +130,8 @@ func getDuration() {
         semaphore.signal()
     }
 
-    // Short timeout for fast fallback to AppleScript
-    let result = semaphore.wait(timeout: .now() + 0.2)
+    // Safety net for a slow callback (see getMetadata)
+    let result = semaphore.wait(timeout: .now() + 1.0)
     if result == .timedOut {
         fputs("Warning: Timeout getting duration\n", stderr)
     }
@@ -150,8 +156,8 @@ func getPosition() {
         semaphore.signal()
     }
 
-    // Short timeout for fast fallback to AppleScript
-    let result = semaphore.wait(timeout: .now() + 0.2)
+    // Safety net for a slow callback (see getMetadata)
+    let result = semaphore.wait(timeout: .now() + 1.0)
     if result == .timedOut {
         fputs("Warning: Timeout getting position\n", stderr)
     }
@@ -179,8 +185,8 @@ func getArtwork() {
         semaphore.signal()
     }
 
-    // Short timeout for fast fallback
-    let result = semaphore.wait(timeout: .now() + 0.2)
+    // Safety net for a slow callback (see getMetadata)
+    let result = semaphore.wait(timeout: .now() + 1.0)
     if result == .timedOut {
         fputs("Warning: Timeout getting artwork\n", stderr)
     }
