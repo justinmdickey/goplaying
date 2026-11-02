@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -26,6 +27,10 @@ var artworkHTTPClient = &http.Client{Timeout: 10 * time.Second}
 // after a failure. Kept short: the most common failure is a cold
 // mediaremoted daemon on the first call, which recovers within seconds.
 const mediaRemoteRetryInterval = 30 * time.Second
+
+// commandTimeout bounds every osascript and helper call. AppleEvents default
+// to a 2-minute timeout, and a hung call would otherwise block the fetch.
+const commandTimeout = 3 * time.Second
 
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
@@ -115,7 +120,9 @@ func (h *HybridController) markMediaRemoteFailed() {
 }
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
-	cmd := exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
@@ -134,19 +141,20 @@ func (h *HybridController) findActivePlayer() (string, error) {
 	players := []string{"Music", "Spotify"}
 
 	for _, player := range players {
+		// "is running" is answered locally without launching the app or
+		// going through System Events, which can hang or need its own
+		// Automation permission
 		checkScript := fmt.Sprintf(`
-			tell application "System Events"
-				if exists (process "%s") then
-					try
-						tell application "%s"
-							if player state is not stopped then
-								return "true"
-							end if
-						end tell
-					end try
-				end if
-				return "false"
-			end tell`, player, player)
+			if application "%s" is running then
+				try
+					tell application "%s"
+						if player state is not stopped then
+							return "true"
+						end if
+					end tell
+				end try
+			end if
+			return "false"`, player, player)
 
 		result, err := h.runAppleScript(checkScript)
 		if err == nil && result == "true" {
@@ -166,7 +174,9 @@ func (h *HybridController) runHelper(args ...string) (string, error) {
 	// mediaremoted only answers Apple-signed processes (macOS 15.4+), so the
 	// helper runs inside /usr/bin/perl instead of as its own executable.
 	cmdArgs := append([]string{"-e", helperLoader, h.helperPath}, args...)
-	cmd := exec.Command(perlPath, cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, perlPath, cmdArgs...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
