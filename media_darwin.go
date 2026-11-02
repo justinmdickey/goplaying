@@ -23,8 +23,9 @@ import (
 var artworkHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // mediaRemoteRetryInterval is how long to wait before retrying MediaRemote
-// after a failure, instead of permanently falling back to AppleScript.
-const mediaRemoteRetryInterval = 5 * time.Minute
+// after a failure. Kept short: the most common failure is a cold
+// mediaremoted daemon on the first call, which recovers within seconds.
+const mediaRemoteRetryInterval = 30 * time.Second
 
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
