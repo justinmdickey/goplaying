@@ -33,6 +33,14 @@ This will compile the `nowplaying` binary using Swift.
 ./nowplaying previous
 ```
 
+## Debugging
+
+`debug.swift` dumps the raw Now Playing info dictionary from MediaRemote, which is useful when the helper reports "No media playing" but a player is running (e.g. after a macOS release renames the info keys):
+
+```bash
+swift debug.swift
+```
+
 ## How It Works
 
 The helper dynamically loads the MediaRemote framework (`/System/Library/PrivateFrameworks/MediaRemote.framework`) and calls its functions to get Now Playing information. This is the same framework macOS uses for Control Center, keyboard media keys, and lock screen media controls.
