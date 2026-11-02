@@ -33,6 +33,12 @@ let MRMediaRemoteGetNowPlayingInfo = unsafeBitCast(getNowPlayingInfoPtr, to: MRM
 let MRMediaRemoteGetNowPlayingApplicationIsPlaying = unsafeBitCast(getIsPlayingPtr, to: MRMediaRemoteGetNowPlayingApplicationIsPlayingType.self)
 let MRMediaRemoteSendCommand = unsafeBitCast(sendCommandPtr, to: MRMediaRemoteSendCommandType.self)
 
+// MediaRemote delivers its callbacks on the queue we pass in. This is a CLI
+// tool with no run loop, so DispatchQueue.main would never drain while the
+// main thread is blocked on the semaphore below and every call would time
+// out. A dedicated serial queue lets the callbacks run on a worker thread.
+let nowPlayingQueue = DispatchQueue(label: "goplaying.nowplaying")
+
 // MediaRemote command constants
 enum MRCommand: UInt32 {
     case play = 0
@@ -47,7 +53,7 @@ func getMetadata() {
     let semaphore = DispatchSemaphore(value: 0)
     var hasInfo = false
 
-    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
+    MRMediaRemoteGetNowPlayingInfo(nowPlayingQueue) { info in
         // Check if we have any info at all
         if info.isEmpty {
             semaphore.signal()
@@ -72,7 +78,7 @@ func getMetadata() {
             }
         }
 
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { isPlaying in
+        MRMediaRemoteGetNowPlayingApplicationIsPlaying(nowPlayingQueue) { isPlaying in
             let status = isPlaying ? "playing" : "paused"
 
             // Only output if we have at least a title
@@ -102,7 +108,7 @@ func getMetadata() {
 func getDuration() {
     let semaphore = DispatchSemaphore(value: 0)
 
-    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
+    MRMediaRemoteGetNowPlayingInfo(nowPlayingQueue) { info in
         var duration: Double = 0
 
         // Try to find duration with different key formats
@@ -128,7 +134,7 @@ func getDuration() {
 func getPosition() {
     let semaphore = DispatchSemaphore(value: 0)
 
-    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
+    MRMediaRemoteGetNowPlayingInfo(nowPlayingQueue) { info in
         var position: Double = 0
 
         // Try to find elapsed time with different key formats
@@ -154,7 +160,7 @@ func getPosition() {
 func getArtwork() {
     let semaphore = DispatchSemaphore(value: 0)
 
-    MRMediaRemoteGetNowPlayingInfo(DispatchQueue.main) { info in
+    MRMediaRemoteGetNowPlayingInfo(nowPlayingQueue) { info in
         // Try to find artwork data with different key formats
         for key in info.keys {
             let keyStr = String(describing: key)
