@@ -61,5 +61,7 @@ jobs:
 
       - name: Compile Swift helper
         run: |
-          swiftc -O helpers/nowplaying/main.swift -o nowplaying
-          test -x nowplaying
+          swiftc -O -parse-as-library -emit-library \
+            helpers/nowplaying/NowPlaying.swift -o libnowplaying.dylib
+          # The helper must load into the system perl and expose its entry point
+          /usr/bin/perl -e 'use DynaLoader; my $l = DynaLoader::dl_load_file($ARGV[0], 0) or die DynaLoader::dl_error(); DynaLoader::dl_find_symbol($l, "nowplaying_main") or die DynaLoader::dl_error();' "$PWD/libnowplaying.dylib"
