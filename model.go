@@ -77,6 +77,10 @@ type model struct {
 
 	// UI state
 	showHelp bool // Whether to show help text
+
+	// fetchInFlight skips scheduled fetches while one is still running, so a
+	// slow media controller can't pile up concurrent fetches
+	fetchInFlight bool
 }
 
 // UI refresh tick - fires every 100ms for smooth rendering
@@ -491,6 +495,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fetchMsg:
 		// Data fetch tick - get fresh data and schedule next fetch
+		if m.fetchInFlight {
+			return m, fetchCmd()
+		}
+		m.fetchInFlight = true
 		return m, tea.Batch(
 			fetchCmd(),
 			m.fetchSongData(),
@@ -498,6 +506,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case songDataMsg:
 		// Received fresh song data
+		m.fetchInFlight = false
 		cfg := config.Get()
 		if msg.err != nil {
 			m.lastError = msg.err

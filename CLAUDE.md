@@ -84,7 +84,9 @@ The application is split into focused modules for better maintainability:
   - `MediaController` interface for cross-platform abstraction
 
 ### macOS Swift Helper
-- **helpers/nowplaying/main.swift**: MediaRemote private framework wrapper
+- **helpers/nowplaying/NowPlaying.swift**: MediaRemote private framework wrapper, built as `libnowplaying.dylib`
+  - Loaded into `/usr/bin/perl` via DynaLoader (macOS 15.4+ only serves MediaRemote data to Apple-signed processes; a standalone binary gets an empty dictionary)
+  - Must be loaded by absolute path (perl's hardened runtime rejects relative dylib paths)
   - Returns base64-encoded artwork data
   - Required for broader app support beyond Music/Spotify
   - Build with: `cd helpers/nowplaying && make`
@@ -285,6 +287,7 @@ git push origin v0.3.X
 
 ### macOS Artwork
 - Swift helper must be compiled (`make darwin`)
+- Helper dylib is hosted in `/usr/bin/perl`; running MediaRemote from our own process returns empty info on macOS 15.4+
 - AppleScript fallback uses temp files (raw data doesn't work via osascript stdout)
 - MediaRemote returns base64, AppleScript returns raw bytes (code handles both)
 

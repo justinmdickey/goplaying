@@ -104,7 +104,7 @@ xcode-select --install
 make darwin
 ```
 
-The `nowplaying` helper provides:
+The `libnowplaying.dylib` helper provides:
 - Support for any app using macOS Now Playing API (Safari, Chrome, etc.)
 - Faster metadata updates via MediaRemote framework
 - Alternative artwork source for additional players
@@ -151,7 +151,7 @@ make linux
 ./goplaying
 ```
 
-**Note for macOS**: The `nowplaying` helper binary should be in the same directory as `goplaying`, or in `helpers/nowplaying/`. The Makefile handles this automatically. If the helper is not found, the app will automatically fall back to AppleScript-only mode, which still works with Apple Music and Spotify but won't detect other apps.
+**Note for macOS**: The `libnowplaying.dylib` helper should be in the same directory as `goplaying`, or in `helpers/nowplaying/`. Since macOS 15.4, MediaRemote only serves Apple-signed processes, so goplaying loads the helper into the system `/usr/bin/perl` rather than running it directly. The Makefile handles this automatically. If the helper is not found, the app will automatically fall back to AppleScript-only mode, which still works with Apple Music and Spotify but won't detect other apps.
 
 ## Usage
 

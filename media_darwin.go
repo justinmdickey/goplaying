@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -27,6 +28,10 @@ var artworkHTTPClient = &http.Client{Timeout: 10 * time.Second}
 // mediaremoted daemon on the first call, which recovers within seconds.
 const mediaRemoteRetryInterval = 30 * time.Second
 
+// commandTimeout bounds every osascript and helper call. AppleEvents default
+// to a 2-minute timeout, and a hung call would otherwise block the fetch.
+const commandTimeout = 3 * time.Second
+
 // HybridController implements MediaController using MediaRemote with AppleScript fallback
 // This provides reliable Now Playing info for music apps on macOS
 type HybridController struct {
@@ -41,30 +46,54 @@ type HybridController struct {
 	cachedPosition       float64   // Cached position from last metadata call
 }
 
+// helperLibName is the MediaRemote helper dylib built from
+// helpers/nowplaying. It is loaded into /usr/bin/perl rather than run
+// directly; see runHelper.
+const helperLibName = "libnowplaying.dylib"
+
+// perlPath is the Apple-signed host for the helper dylib.
+const perlPath = "/usr/bin/perl"
+
+// helperLoader loads the helper dylib (ARGV[0]) and calls its entry point,
+// which reads the command from the remaining arguments.
+const helperLoader = `use DynaLoader;
+my $lib = DynaLoader::dl_load_file($ARGV[0], 0) or die DynaLoader::dl_error();
+my $sym = DynaLoader::dl_find_symbol($lib, "nowplaying_main") or die DynaLoader::dl_error();
+DynaLoader::dl_install_xsub("main::nowplaying_main", $sym);
+main::nowplaying_main();`
+
 // NewMediaController creates a new media controller for the current platform
 func NewMediaController() MediaController {
-	// Find the nowplaying helper
-	// Try multiple locations in order of preference
-	var helperPath string
-
-	// 1. Same directory as the binary
-	helperPath = "./nowplaying"
-	if _, err := os.Stat(helperPath); err == nil {
-		return &HybridController{helperPath: helperPath}
+	// Without perl the helper can't be hosted; AppleScript only
+	if _, err := os.Stat(perlPath); err != nil {
+		return &HybridController{helperPath: ""}
 	}
 
-	// 2. helpers/nowplaying/ subdirectory
-	helperPath = "./helpers/nowplaying/nowplaying"
-	if _, err := os.Stat(helperPath); err == nil {
-		return &HybridController{helperPath: helperPath}
+	// Find the helper dylib, trying locations in order of preference:
+	// working directory, helpers/nowplaying/ (dev builds), next to the
+	// executable (release archives), and ../libexec (Homebrew).
+	candidates := []string{
+		helperLibName,
+		filepath.Join("helpers", "nowplaying", helperLibName),
 	}
-
-	// 3. Relative to executable location
 	if exePath, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+			exePath = resolved
+		}
 		exeDir := filepath.Dir(exePath)
-		helperPath = filepath.Join(exeDir, "nowplaying")
-		if _, err := os.Stat(helperPath); err == nil {
-			return &HybridController{helperPath: helperPath}
+		candidates = append(candidates,
+			filepath.Join(exeDir, helperLibName),
+			filepath.Join(exeDir, "..", "libexec", helperLibName),
+		)
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		// dyld rejects relative paths when loading into perl (hardened runtime)
+		if abs, err := filepath.Abs(candidate); err == nil {
+			return &HybridController{helperPath: abs}
 		}
 	}
 
@@ -91,7 +120,9 @@ func (h *HybridController) markMediaRemoteFailed() {
 }
 
 func (h *HybridController) runAppleScript(script string) (string, error) {
-	cmd := exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
@@ -110,19 +141,20 @@ func (h *HybridController) findActivePlayer() (string, error) {
 	players := []string{"Music", "Spotify"}
 
 	for _, player := range players {
+		// "is running" is answered locally without launching the app or
+		// going through System Events, which can hang or need its own
+		// Automation permission
 		checkScript := fmt.Sprintf(`
-			tell application "System Events"
-				if exists (process "%s") then
-					try
-						tell application "%s"
-							if player state is not stopped then
-								return "true"
-							end if
-						end tell
-					end try
-				end if
-				return "false"
-			end tell`, player, player)
+			if application "%s" is running then
+				try
+					tell application "%s"
+						if player state is not stopped then
+							return "true"
+						end if
+					end tell
+				end try
+			end if
+			return "false"`, player, player)
 
 		result, err := h.runAppleScript(checkScript)
 		if err == nil && result == "true" {
@@ -139,7 +171,12 @@ func (h *HybridController) runHelper(args ...string) (string, error) {
 		return "", errors.New("helper not available")
 	}
 
-	cmd := exec.Command(h.helperPath, args...)
+	// mediaremoted only answers Apple-signed processes (macOS 15.4+), so the
+	// helper runs inside /usr/bin/perl instead of as its own executable.
+	cmdArgs := append([]string{"-e", helperLoader, h.helperPath}, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, perlPath, cmdArgs...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
