@@ -13,33 +13,24 @@ This Swift helper uses macOS's private MediaRemote framework to get Now Playing 
 make
 ```
 
-This will compile the `nowplaying` binary using Swift.
+This will compile `libnowplaying.dylib` using Swift.
+
+Since macOS 15.4, `mediaremoted` only returns Now Playing info to Apple-signed processes; anything else gets an empty dictionary. The helper is therefore a dylib that goplaying loads into `/usr/bin/perl` (an Apple platform binary), calling its `nowplaying_main` entry point.
 
 ## Usage
 
+The dylib must be loaded by absolute path (dyld rejects relative paths in perl's hardened runtime):
+
 ```bash
+LOADER='use DynaLoader; my $l = DynaLoader::dl_load_file($ARGV[0], 0) or die DynaLoader::dl_error(); my $s = DynaLoader::dl_find_symbol($l, "nowplaying_main") or die DynaLoader::dl_error(); DynaLoader::dl_install_xsub("main::nowplaying_main", $s); main::nowplaying_main();'
+
 # Get metadata (title|artist|album|status)
-./nowplaying metadata
+/usr/bin/perl -e "$LOADER" "$PWD/libnowplaying.dylib" metadata
 
-# Get duration in seconds
-./nowplaying duration
-
-# Get current position in seconds
-./nowplaying position
-
-# Control playback
-./nowplaying play-pause
-./nowplaying next
-./nowplaying previous
+# Other commands: duration, position, artwork, play-pause, next, previous
 ```
 
-## Debugging
-
-`debug.swift` dumps the raw Now Playing info dictionary from MediaRemote, which is useful when the helper reports "No media playing" but a player is running (e.g. after a macOS release renames the info keys):
-
-```bash
-swift debug.swift
-```
+If `metadata` reports `No media playing (info keys: 0)` while something is playing, MediaRemote is refusing the host process.
 
 ## How It Works
 

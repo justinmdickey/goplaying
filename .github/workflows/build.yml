@@ -18,15 +18,16 @@ jobs:
 
     - name: Compile nowplaying helper
       run: |
-        swiftc -O -target ${{ matrix.arch }}-apple-macosx12.0 \
-          helpers/nowplaying/main.swift \
-          -o nowplaying
+        swiftc -O -parse-as-library -emit-library \
+          -target ${{ matrix.arch }}-apple-macosx12.0 \
+          helpers/nowplaying/NowPlaying.swift \
+          -o libnowplaying.dylib
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: nowplaying-darwin-${{ matrix.arch }}
-        path: nowplaying
+        path: libnowplaying.dylib
 
   release:
     name: Release with GoReleaser
@@ -52,11 +53,6 @@ jobs:
       with:
         name: nowplaying-darwin-x86_64
         path: swift-helpers/nowplaying-darwin-x86_64
-
-    - name: Make helpers executable
-      run: |
-        chmod +x swift-helpers/nowplaying-darwin-arm64/nowplaying
-        chmod +x swift-helpers/nowplaying-darwin-x86_64/nowplaying
 
     - name: Set up Go
       uses: actions/setup-go@v5

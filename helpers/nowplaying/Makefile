@@ -1,9 +1,9 @@
 .PHONY: all clean
 
-all: nowplaying
+all: libnowplaying.dylib
 
-nowplaying: main.swift
-	swiftc -O main.swift -o nowplaying
+libnowplaying.dylib: NowPlaying.swift
+	swiftc -O -parse-as-library -emit-library NowPlaying.swift -o libnowplaying.dylib
 
 clean:
-	rm -f nowplaying
+	rm -f libnowplaying.dylib nowplaying

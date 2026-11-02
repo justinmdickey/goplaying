@@ -26,7 +26,7 @@ lint:
 test:
 	go test -v ./...
 
-# Build macOS helper (only on Darwin)
+# Build macOS helper dylib (only on Darwin)
 helper:
 	cd helpers/nowplaying && $(MAKE)
 
